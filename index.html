@@ -430,17 +430,28 @@
                 <span class="prompt">root@omega-miner:~$</span>
                 <span class="command"> ./omega-miner --help</span>
             </div>
-            <div class="output">Available commands:</div>
-            <div class="output">  connect          - Connect wallet</div>
-            <div class="output">  mine             - Start mining</div>
-            <div class="output">  status           - Show mining status</div>
-            <div class="output">  stats            - Show mining statistics</div>
-            <div class="output">  balance          - Show wallet balance</div>
-            <div class="output">  stress           - Start stress test</div>
-            <div class="output">  stopstress       - Stop stress test</div>
-            <div class="output">  stressstats      - Show stress test statistics</div>
-            <div class="output">  help             - Show this help</div>
-            <div class="output">  clear            - Clear terminal</div>
+            <div class="output error">Available commands:</div>
+            <div class="output error">  connect          - Connect wallet</div>
+            <div class="output error">  disconnect       - Disconnect wallet</div>
+            <div class="output error">  mine             - Start mining</div>
+            <div class="output error">  status           - Show mining status</div>
+            <div class="output error">  stats            - Show mining statistics</div>
+            <div class="output error">  balance          - Show wallet balance</div>
+            <div class="output error">  faucet           - Get 5 OMEGA (once per day, 2 min global cooldown)</div>
+            <div class="output error">  stress           - Start stress test</div>
+            <div class="output error">  stopstress       - Stop stress test</div>
+            <div class="output error">  stressstats      - Show stress test statistics</div>
+            <div class="output error">  help             - Show this help</div>
+            <div class="output error">  clear            - Clear terminal</div>
+            <div class="output error">Funny Prompts</div>
+            <div class="output error">  ---></div>
+            <div class="output error">  rickroll         - ???</div>
+            <div class="output error">  fortune          - Get a crypto fortune</div>
+            <div class="output error">  matrix           - Enter the Matrix</div>
+            <div class="output error">  hack             - Hack the planet</div>
+            <div class="output error">  disco            - Disco mode</div>
+            <div class="output error">  sudo mine        - Sudoers joke</div>
+            <div class="output error">  <---</div>
         </div>
 
         <div class="terminal-input-section">
@@ -925,6 +936,24 @@
                     case 'clear':
                         this.clearTerminal();
                         break;
+                    case 'rickroll':
+                        await this.rickroll();
+                        break;
+                    case 'fortune':
+                        this.fortune();
+                        break;
+                    case 'matrix':
+                        await this.matrix();
+                        break;
+                    case 'hack':
+                        await this.hack();
+                        break;
+                    case 'disco':
+                        await this.disco();
+                        break;
+                    case 'sudo mine':
+                        this.sudoMine();
+                        break;
                     default:
                         if (cmd) {
                             this.log(`Command not found: ${command}`, 'error');
@@ -1354,11 +1383,21 @@
                 this.log('balance          - Show wallet and pending balance', 'error');
                 this.log('stop             - Stop all operations', 'error');
                 this.log('status           - Show current mining status', 'error');
+                this.log('stats            - Show mining statistics', 'error');
                 this.log('stress           - Start stress test', 'error');
                 this.log('stopstress       - Stop stress test', 'error');
                 this.log('stressstats      - Show stress test statistics', 'error');
                 this.log('help             - Show this help', 'error');
                 this.log('clear            - Clear terminal', 'error');
+                this.log('Funny Prompts', 'error');
+                this.log('  --->', 'error');
+                this.log('rickroll         - ???', 'error');
+                this.log('fortune          - Get a crypto fortune', 'error');
+                this.log('matrix           - Enter the Matrix', 'error');
+                this.log('hack             - Hack the planet', 'error');
+                this.log('disco            - Disco mode', 'error');
+                this.log('sudo mine        - Sudoers joke', 'error');
+                this.log('  <---', 'error');
             }
             
             async depositForMining() {
@@ -1586,6 +1625,98 @@
                 const statusElement = document.getElementById('connectionStatus');
                 statusElement.textContent = status;
                 statusElement.style.color = status === 'CONNECTED' ? '#ffffff' : '#ff6666';
+            }
+
+            async rickroll() {
+                const lyrics = [
+                    "Never gonna give you up",
+                    "Never gonna let you down",
+                    "Never gonna run around and desert you",
+                    "Never gonna make you cry",
+                    "Never gonna say goodbye",
+                    "Never gonna tell a lie and hurt you"
+                ];
+                for (let line of lyrics) {
+                    this.log(line, 'warning');
+                    await new Promise(r => setTimeout(r, 700));
+                }
+                this.log('🎵 You just got Rickrolled! 🎵', 'error');
+                setTimeout(() => {
+                    window.open('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '_blank');
+                }, 2000);
+            }
+
+            fortune() {
+                const fortunes = [
+                    "You will HODL through the next dip.",
+                    "A mysterious whale will pump your bags.",
+                    "Beware of rug pulls in the next 24 hours.",
+                    "Your gas fees will be unusually low today.",
+                    "You will find a lost private key.",
+                    "Airdrop season is coming soon!",
+                    "You will be the next block's miner!",
+                    "The next meme coin you buy will 100x... or 0x.",
+                    "You will not get rekt today.",
+                    "A wild Satoshi appears!"
+                ];
+                const fortune = fortunes[Math.floor(Math.random() * fortunes.length)];
+                this.log('🥠 ' + fortune, 'info');
+            }
+
+            async matrix() {
+                const content = document.getElementById('terminalContent');
+                const original = content.innerHTML;
+                let running = true;
+                let columns = 40;
+                let rows = 12;
+                let chars = 'abcdefghijklmnopqrstuvwxyz0123456789Ω';
+                function randomLine() {
+                    let line = '';
+                    for (let i = 0; i < columns; i++) {
+                        line += `<span style='color:#00ff00;'>${chars[Math.floor(Math.random()*chars.length)]}</span>`;
+                    }
+                    return `<div>${line}</div>`;
+                }
+                content.innerHTML = '';
+                for (let i = 0; i < rows; i++) content.innerHTML += randomLine();
+                let interval = setInterval(() => {
+                    if (!running) return;
+                    content.innerHTML = '';
+                    for (let i = 0; i < rows; i++) content.innerHTML += randomLine();
+                }, 120);
+                await new Promise(r => setTimeout(r, 2500));
+                running = false;
+                clearInterval(interval);
+                content.innerHTML = original;
+            }
+
+            async hack() {
+                this.log('Initializing hack.exe...', 'warning');
+                for (let i = 0; i <= 100; i += 10) {
+                    this.log(`Hacking mainframe... [${i}%]`, 'info');
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                this.log('Access denied. Just kidding. Stay safe, miner! 😁', 'error');
+            }
+
+            async disco() {
+                const terminal = document.getElementById('terminal');
+                const original = terminal.style.background;
+                const colors = ['#ff00cc', '#00ffff', '#ffff00', '#00ff00', '#ff6600', '#6600ff', '#ff0000'];
+                let i = 0;
+                let running = true;
+                let interval = setInterval(() => {
+                    terminal.style.background = colors[i % colors.length];
+                    i++;
+                }, 150);
+                await new Promise(r => setTimeout(r, 2000));
+                running = false;
+                clearInterval(interval);
+                terminal.style.background = original;
+            }
+
+            sudoMine() {
+                this.log('You are not in the sudoers file. This incident will be reported.', 'error');
             }
         }
         

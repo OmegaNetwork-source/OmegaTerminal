@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omega Terminal - Mining Interface</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            overflow: hidden;
+        }
+
+        .terminal {
+            width: 100vw;
+            height: 100vh;
+            padding: 20px;
+            background: linear-gradient(135deg, #000 0%, #111111 100%);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-header {
+            border-bottom: 1px solid #ffffff;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .terminal-title {
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 0 0 15px #ffffff, 0 0 30px #ffffff;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .terminal-status {
+            font-size: 12px;
+            color: #cccccc;
+        }
+
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #ffffff;
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .terminal-input-section {
+            border-top: 1px solid #ffffff;
+            padding-top: 10px;
+            margin-top: auto;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ffffff;
+        }
+
+        .terminal-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+            margin-bottom: 20px;
+        }
+
+        .terminal-line {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+
+        .prompt {
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        .command {
+            color: #ffffff;
+        }
+
+        .output {
+            color: #cccccc;
+            margin-left: 20px;
+        }
+
+        .error {
+            color: #ff6666;
+        }
+
+        .success {
+            color: #ffffff;
+        }
+
+        .warning {
+            color: #ffffcc;
+        }
+
+        .info {
+            color: #99ccff;
+        }
+
+        .mining-status {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #ffffff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #111111;
+            border: 1px solid #ffffff;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ffffff, #cccccc);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px #ffffff;
+        }
+
+        .input-line {
+            display: flex;
+            align-items: center;
+            background: transparent;
+        }
+
+        .input-prompt {
+            color: #ffffff;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 16px;
+        }
+
+        .input-field {
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            outline: none;
+            flex: 1;
+            padding: 5px;
+        }
+
+        .input-field::placeholder {
+            color: #666666;
+        }
+
+        .cursor {
+            animation: blink 1s infinite;
+            color: #ffffff;
+            font-size: 16px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .mining-animation {
+            display: inline-block;
+            animation: mining-pulse 2s infinite;
+        }
+
+        @keyframes mining-pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #ffffff;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .stat-label {
+            color: #cccccc;
+            font-size: 12px;
+        }
+
+        .stat-value {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        /* Boot Animation Styles */
+        .boot-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-family: 'Courier New', monospace;
+        }
+
+        .omega-symbols {
+            font-size: 48px;
+            color: #ffffff;
+            text-shadow: 0 0 20px #ffffff;
+            margin-bottom: 20px;
+            animation: omega-float 3s ease-in-out infinite;
+        }
+
+        .pickaxe {
+            font-size: 36px;
+            color: #ffcc00;
+            text-shadow: 0 0 15px #ffcc00;
+            animation: pickaxe-swing 2s ease-in-out infinite;
+            margin-bottom: 30px;
+        }
+
+        .welcome-text {
+            font-size: 24px;
+            color: #ffffff;
+            text-align: center;
+            line-height: 1.5;
+            text-shadow: 0 0 10px #ffffff;
+        }
+
+        .loading-dots {
+            font-size: 18px;
+            color: #cccccc;
+            margin-top: 20px;
+            animation: loading-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes omega-float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pickaxe-swing {
+            0%, 100% { transform: rotate(-15deg); }
+            50% { transform: rotate(15deg); }
+        }
+
+        @keyframes loading-pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Light Theme Styles */
+        .terminal.light-theme {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+            color: #000000;
+        }
+
+        .terminal.light-theme .terminal-header {
+            border-bottom: 1px solid #000000;
+        }
+
+        .terminal.light-theme .terminal-title {
+            color: #000000;
+            text-shadow: 0 0 15px #000000, 0 0 30px #000000;
+        }
+
+        .terminal.light-theme .terminal-status {
+            color: #333333;
+        }
+
+        .terminal.light-theme .theme-toggle {
+            background: rgba(0, 0, 0, 0.1);
+            border: 1px solid #000000;
+            color: #000000;
+        }
+
+        .terminal.light-theme .theme-toggle:hover {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .terminal.light-theme .terminal-input-section {
+            border-top: 1px solid #000000;
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid #000000;
+        }
+
+        .terminal.light-theme .prompt {
+            color: #000000;
+        }
+
+        .terminal.light-theme .command {
+            color: #000000;
+        }
+
+        .terminal.light-theme .output {
+            color: #333333;
+        }
+
+        .terminal.light-theme .error {
+            color: #cc0000;
+        }
+
+        .terminal.light-theme .success {
+            color: #000000;
+        }
+
+        .terminal.light-theme .warning {
+            color: #cc6600;
+        }
+
+        .terminal.light-theme .info {
+            color: #0066cc;
+        }
+
+        .terminal.light-theme .input-prompt {
+            color: #000000;
+        }
+
+        .terminal.light-theme .input-field {
+            color: #000000;
+        }
+
+        .terminal.light-theme .input-field::placeholder {
+            color: #666666;
+        }
+
+        .terminal.light-theme .cursor {
+            color: #000000;
+        }
+
+        .terminal.light-theme .mining-status {
+            background: rgba(0, 0, 0, 0.1);
+            border: 1px solid #000000;
+        }
+
+        .terminal.light-theme .stat-box {
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid #000000;
+        }
+
+        .terminal.light-theme .stat-label {
+            color: #333333;
+        }
+
+        .terminal.light-theme .stat-value {
+            color: #000000;
+        }
+    </style>
+</head>
+<body>
+    <!-- Boot Animation -->
+    <div class="boot-animation" id="bootAnimation">
+        <div class="omega-symbols">Ω Ω Ω Ω Ω</div>
+        <div class="pickaxe">⛏️</div>
+        <div class="welcome-text">
+            Welcome to Omega Miner v1.0.0<br>
+            <span style="font-size: 16px; color: #cccccc;">Type below to get started</span>
+        </div>
+        <div class="loading-dots">Loading...</div>
+    </div>
+
+    <div class="terminal" id="terminal" style="display: none;">
+        <div class="terminal-header">
+            <div class="terminal-title">OMEGA MINING TERMINAL v1.0.0</div>
+            <div class="terminal-status" id="connectionStatus">DISCONNECTED</div>
+            <button class="theme-toggle">Toggle Theme</button>
+        </div>
+        
+        <div class="terminal-content" id="terminalContent">
+            <div class="terminal-line">
+                <span class="prompt">root@omega-miner:~$</span>
+                <span class="command"> ./omega-miner --version</span>
+            </div>
+            <div class="output">Omega Mining Terminal v1.0.0</div>
+            <div class="output">Connected to Omega Network (Chain ID: 1313161768)</div>
+            <div class="output">Mining Contract: <span id="contractAddress">Not deployed</span></div>
+            <div class="terminal-line">
+                <span class="prompt">root@omega-miner:~$</span>
+                <span class="command"> ./omega-miner --help</span>
+            </div>
+            <div class="output">Available commands:</div>
+            <div class="output">  connect          - Connect wallet</div>
+            <div class="output">  mine             - Start mining</div>
+            <div class="output">  status           - Show mining status</div>
+            <div class="output">  stats            - Show mining statistics</div>
+            <div class="output">  balance          - Show wallet balance</div>
+            <div class="output">  help             - Show this help</div>
+            <div class="output">  clear            - Clear terminal</div>
+        </div>
+
+        <div class="terminal-input-section">
+            <div class="input-line">
+                <span class="input-prompt">root@omega-miner:~$</span>
+                <input type="text" class="input-field" id="commandInput" placeholder="Enter command..." autocomplete="off">
+                <span class="cursor">|</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Wait for ethers to load
+        function waitForEthers() {
+            return new Promise((resolve, reject) => {
+                if (typeof ethers !== 'undefined') {
+                    resolve(ethers);
+                } else {
+                    // Try alternative CDN if first one fails
+                    const script = document.createElement('script');
+                    script.src = 'https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js';
+                    script.onload = () => {
+                        if (typeof ethers !== 'undefined') {
+                            resolve(ethers);
+                        } else {
+                            reject(new Error('Failed to load ethers library'));
+                        }
+                    };
+                    script.onerror = () => reject(new Error('Failed to load ethers library'));
+                    document.head.appendChild(script);
+                }
+            });
+        }
+
+        class OmegaMinerTerminal {
+            constructor() {
+                this.provider = null;
+                this.signer = null;
+                this.contract = null;
+                this.isMining = false;
+                this.miningInterval = null;
+                this.currentNonce = 0;
+                this.ethers = null;
+                this.isDarkTheme = true; // Default to dark theme
+                
+                this.contractAddress = '0x0000000000000000000000000000000000000000'; // Will be set after deployment
+                this.contractABI = [
+                    "function mine(uint256 nonce, bytes32 solution) external",
+                    "function getMiningStats(address miner) external view returns (uint256, uint256, uint256)",
+                    "function getMiningDifficulty() external pure returns (uint256)",
+                    "function getMiningReward() external pure returns (uint256)",
+                    "function balanceOf(address account) external view returns (uint256)",
+                    "event MineSuccessful(address indexed miner, uint256 reward, uint256 nonce, bytes32 solution)"
+                ];
+                
+                this.init();
+            }
+            
+            async init() {
+                // Load saved theme preference
+                this.loadThemePreference();
+                
+                // Show boot animation first
+                await this.showBootAnimation();
+                
+                try {
+                    this.ethers = await waitForEthers();
+                    this.log('Ethers library loaded successfully', 'success');
+                    this.setupEventListeners();
+                    this.checkWalletConnection();
+                } catch (error) {
+                    this.log('Failed to load ethers library: ' + error.message, 'error');
+                    this.log('Please check your internet connection and refresh the page', 'error');
+                }
+            }
+            
+            loadThemePreference() {
+                const savedTheme = localStorage.getItem('omega-miner-theme');
+                if (savedTheme === 'light') {
+                    this.isDarkTheme = false;
+                    this.applyTheme();
+                }
+            }
+            
+            toggleTheme() {
+                this.isDarkTheme = !this.isDarkTheme;
+                this.applyTheme();
+                localStorage.setItem('omega-miner-theme', this.isDarkTheme ? 'dark' : 'light');
+            }
+            
+            applyTheme() {
+                const terminal = document.getElementById('terminal');
+                const themeToggle = document.querySelector('.theme-toggle');
+                
+                if (this.isDarkTheme) {
+                    terminal.classList.remove('light-theme');
+                    themeToggle.textContent = '☀️ Light';
+                } else {
+                    terminal.classList.add('light-theme');
+                    themeToggle.textContent = '🌙 Dark';
+                }
+            }
+            
+            async showBootAnimation() {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        // Hide boot animation and show terminal
+                        document.getElementById('bootAnimation').style.display = 'none';
+                        document.getElementById('terminal').style.display = 'flex';
+                        
+                        // Apply theme after terminal is shown
+                        this.applyTheme();
+                        
+                        resolve();
+                    }, 3000); // Show animation for 3 seconds
+                });
+            }
+            
+            setupEventListeners() {
+                const input = document.getElementById('commandInput');
+                if (input) {
+                    input.focus();
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            this.executeCommand(input.value);
+                            input.value = '';
+                        }
+                    });
+                }
+                
+                // Setup theme toggle
+                const themeToggle = document.querySelector('.theme-toggle');
+                if (themeToggle) {
+                    themeToggle.addEventListener('click', () => {
+                        this.toggleTheme();
+                    });
+                    // Set initial button text
+                    themeToggle.textContent = this.isDarkTheme ? '☀️ Light' : '🌙 Dark';
+                }
+            }
+            
+            async checkWalletConnection() {
+                if (typeof window.ethereum !== 'undefined') {
+                    try {
+                        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                        if (accounts.length > 0) {
+                            await this.connectWallet();
+                        }
+                    } catch (error) {
+                        this.log('Error checking wallet connection: ' + error.message, 'error');
+                    }
+                }
+            }
+            
+            async connectWallet() {
+                try {
+                    if (!this.ethers) {
+                        this.log('Ethers library not loaded. Please refresh the page.', 'error');
+                        return;
+                    }
+
+                    if (typeof window.ethereum === 'undefined') {
+                        this.log('MetaMask not found. Please install MetaMask.', 'error');
+                        return;
+                    }
+                    
+                    this.provider = new this.ethers.providers.Web3Provider(window.ethereum);
+                    this.signer = this.provider.getSigner();
+                    const address = await this.signer.getAddress();
+                    
+                    this.log(`Wallet connected: ${address}`, 'success');
+                    this.updateConnectionStatus('CONNECTED');
+                    
+                    if (this.contractAddress !== '0x0000000000000000000000000000000000000000') {
+                        this.contract = new this.ethers.Contract(this.contractAddress, this.contractABI, this.signer);
+                        this.log('Mining contract connected', 'success');
+                    }
+                    
+                } catch (error) {
+                    this.log('Failed to connect wallet: ' + error.message, 'error');
+                }
+            }
+            
+            async executeCommand(command) {
+                const cmd = command.trim().toLowerCase();
+                this.logCommand(command);
+                
+                switch (cmd) {
+                    case 'connect':
+                        await this.connectWallet();
+                        break;
+                    case 'mine':
+                        await this.startMining();
+                        break;
+                    case 'status':
+                        await this.showStatus();
+                        break;
+                    case 'stats':
+                        await this.showStats();
+                        break;
+                    case 'balance':
+                        await this.showBalance();
+                        break;
+                    case 'theme':
+                        this.toggleTheme();
+                        this.log(`Theme switched to ${this.isDarkTheme ? 'dark' : 'light'} mode`, 'success');
+                        break;
+                    case 'help':
+                        this.showHelp();
+                        break;
+                    case 'clear':
+                        this.clearTerminal();
+                        break;
+                    default:
+                        if (cmd) {
+                            this.log(`Command not found: ${command}`, 'error');
+                            this.log('Type "help" for available commands', 'info');
+                        }
+                }
+            }
+            
+            async startMining() {
+                if (!this.contract) {
+                    this.log('Please connect wallet and deploy contract first', 'error');
+                    return;
+                }
+                
+                if (this.isMining) {
+                    this.log('Mining already in progress', 'warning');
+                    return;
+                }
+                
+                this.isMining = true;
+                this.log('Starting Omega mining operation...', 'info');
+                this.log('Mining difficulty: 4 leading zeros required', 'info');
+                this.log('Reward per block: 10 OMEGA', 'info');
+                
+                this.miningInterval = setInterval(() => {
+                    this.mineBlock();
+                }, 1000);
+                
+                this.log('Mining started successfully!', 'success');
+            }
+            
+            async mineBlock() {
+                try {
+                    this.currentNonce++;
+                    const address = await this.signer.getAddress();
+                    const blockNumber = await this.provider.getBlockNumber();
+                    
+                    // Simulate mining by trying random solutions
+                    let solution;
+                    let attempts = 0;
+                    const maxAttempts = 1000;
+                    
+                    while (attempts < maxAttempts) {
+                        const randomNonce = Math.floor(Math.random() * 1000000);
+                        const hash = this.ethers.utils.keccak256(
+                            this.ethers.utils.defaultAbiCoder.encode(
+                                ['address', 'uint256', 'uint256'],
+                                [address, randomNonce, blockNumber]
+                            )
+                        );
+                        
+                        // Check if hash has 4 leading zeros
+                        if (hash.startsWith('0x0000')) {
+                            solution = hash;
+                            break;
+                        }
+                        attempts++;
+                    }
+                    
+                    if (solution) {
+                        this.log(`Block found! Nonce: ${randomNonce}, Hash: ${solution}`, 'success');
+                        
+                        try {
+                            const tx = await this.contract.mine(randomNonce, solution);
+                            this.log(`Transaction submitted: ${tx.hash}`, 'info');
+                            
+                            const receipt = await tx.wait();
+                            this.log(`Block mined successfully! Gas used: ${receipt.gasUsed}`, 'success');
+                            
+                            // Update stats
+                            await this.showStats();
+                            
+                        } catch (error) {
+                            this.log(`Transaction failed: ${error.message}`, 'error');
+                        }
+                    }
+                } catch (error) {
+                    this.log(`Mining failed: ${error.message}`, 'error');
+                }
+            }
+            
+            log(message, type = 'output') {
+                const content = document.getElementById('terminalContent');
+                const line = document.createElement('div');
+                line.className = `output ${type}`;
+                line.textContent = message;
+                content.appendChild(line);
+                content.scrollTop = content.scrollHeight;
+            }
+            
+            async showStatus() {
+                if (!this.signer) {
+                    this.log('Wallet not connected. Use "connect" command first.', 'error');
+                    return;
+                }
+                
+                const address = await this.signer.getAddress();
+                const balance = await this.provider.getBalance(address);
+                const balanceEth = this.ethers.utils.formatEther(balance);
+                
+                this.log('=== MINING STATUS ===', 'info');
+                this.log(`Wallet: ${address}`, 'output');
+                this.log(`Balance: ${balanceEth} OMEGA`, 'output');
+                this.log(`Mining: ${this.isMining ? 'ACTIVE' : 'INACTIVE'}`, this.isMining ? 'success' : 'warning');
+                this.log(`Contract: ${this.contract ? 'CONNECTED' : 'NOT DEPLOYED'}`, this.contract ? 'success' : 'error');
+                this.log(`Current Nonce: ${this.currentNonce}`, 'output');
+            }
+            
+            async showStats() {
+                if (!this.contract) {
+                    this.log('Mining contract not deployed or connected.', 'error');
+                    return;
+                }
+                
+                try {
+                    const address = await this.signer.getAddress();
+                    const [blocksMined, totalReward, lastMined] = await this.contract.getMiningStats(address);
+                    const difficulty = await this.contract.getMiningDifficulty();
+                    const reward = await this.contract.getMiningReward();
+                    
+                    this.log('=== MINING STATISTICS ===', 'info');
+                    this.log(`Blocks Mined: ${blocksMined.toString()}`, 'output');
+                    this.log(`Total Reward: ${this.ethers.utils.formatEther(totalReward)} OMEGA`, 'output');
+                    this.log(`Last Mined: ${lastMined.toString() === '0' ? 'Never' : new Date(lastMined.toNumber() * 1000).toLocaleString()}`, 'output');
+                    this.log(`Difficulty: ${difficulty.toString()} leading zeros`, 'output');
+                    this.log(`Reward per Block: ${this.ethers.utils.formatEther(reward)} OMEGA`, 'output');
+                } catch (error) {
+                    this.log(`Failed to get stats: ${error.message}`, 'error');
+                }
+            }
+            
+            async showBalance() {
+                if (!this.signer) {
+                    this.log('Wallet not connected. Use "connect" command first.', 'error');
+                    return;
+                }
+                
+                try {
+                    const address = await this.signer.getAddress();
+                    const balance = await this.provider.getBalance(address);
+                    const balanceEth = this.ethers.utils.formatEther(balance);
+                    
+                    this.log(`Wallet Balance: ${balanceEth} OMEGA`, 'success');
+                    
+                    if (this.contract) {
+                        const tokenBalance = await this.contract.balanceOf(address);
+                        const tokenBalanceEth = this.ethers.utils.formatEther(tokenBalance);
+                        this.log(`Mined Tokens: ${tokenBalanceEth} OMEGA`, 'success');
+                    }
+                } catch (error) {
+                    this.log(`Failed to get balance: ${error.message}`, 'error');
+                }
+            }
+            
+            showHelp() {
+                this.log('=== AVAILABLE COMMANDS ===', 'info');
+                this.log('connect          - Connect MetaMask wallet', 'output');
+                this.log('mine             - Start mining operation', 'output');
+                this.log('status           - Show current mining status', 'output');
+                this.log('stats            - Show mining statistics', 'output');
+                this.log('balance          - Show wallet balance', 'output');
+                this.log('theme            - Toggle dark/light theme', 'output');
+                this.log('help             - Show this help message', 'output');
+                this.log('clear            - Clear terminal output', 'output');
+            }
+            
+            logCommand(command) {
+                const content = document.getElementById('terminalContent');
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                line.innerHTML = `<span class="prompt">root@omega-miner:~$</span> <span class="command">${command}</span>`;
+                content.appendChild(line);
+                content.scrollTop = content.scrollHeight;
+            }
+            
+            addInputLine() {
+                // This method is no longer needed since input is fixed at the top
+                // The input field is already in the HTML structure
+            }
+            
+            clearTerminal() {
+                const content = document.getElementById('terminalContent');
+                content.innerHTML = '';
+                // Don't add input line since it's fixed at the top
+            }
+            
+            updateConnectionStatus(status) {
+                const statusElement = document.getElementById('connectionStatus');
+                statusElement.textContent = status;
+                statusElement.style.color = status === 'CONNECTED' ? '#ffffff' : '#ff6666';
+            }
+        }
+        
+        // Initialize terminal when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.omegaTerminal = new OmegaMinerTerminal();
+        });
+    </script>
+</body>
+</html>

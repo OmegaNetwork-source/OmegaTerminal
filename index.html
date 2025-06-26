@@ -424,6 +424,9 @@
             <div class="output">  status           - Show mining status</div>
             <div class="output">  stats            - Show mining statistics</div>
             <div class="output">  balance          - Show wallet balance</div>
+            <div class="output">  stress           - Start stress test</div>
+            <div class="output">  stopstress       - Stop stress test</div>
+            <div class="output">  stressstats      - Show stress test statistics</div>
             <div class="output">  help             - Show this help</div>
             <div class="output">  clear            - Clear terminal</div>
         </div>
@@ -470,6 +473,19 @@
                 this.currentNonce = 0;
                 this.ethers = null;
                 this.isDarkTheme = true; // Default to dark theme
+                
+                // Stress test properties
+                this.isStressTesting = false;
+                this.stressTestInterval = null;
+                this.stressTestStats = {
+                    walletsCreated: 0,
+                    transactionsSent: 0,
+                    successfulTxs: 0,
+                    failedTxs: 0,
+                    totalGasUsed: 0,
+                    startTime: null
+                };
+                this.mainWallet = null;
                 
                 this.contractAddress = '0x0000000000000000000000000000000000000000'; // Will be set after deployment
                 this.contractABI = [
@@ -553,6 +569,13 @@
                             this.executeCommand(input.value);
                             input.value = '';
                         }
+                        // Ctrl+C to stop stress test
+                        if (e.key === 'c' && e.ctrlKey) {
+                            if (this.isStressTesting) {
+                                this.stopStressTest();
+                                this.log('^C (stress test stopped by user)', 'warning');
+                            }
+                        }
                     });
                 }
                 
@@ -594,6 +617,7 @@
                     
                     this.provider = new this.ethers.providers.Web3Provider(window.ethereum);
                     this.signer = this.provider.getSigner();
+                    this.mainWallet = this.signer;
                     const address = await this.signer.getAddress();
                     
                     this.log(`Wallet connected: ${address}`, 'success');
@@ -628,6 +652,15 @@
                         break;
                     case 'balance':
                         await this.showBalance();
+                        break;
+                    case 'stress':
+                        await this.startStressTest();
+                        break;
+                    case 'stopstress':
+                        this.stopStressTest();
+                        break;
+                    case 'stressstats':
+                        this.showStressStats();
                         break;
                     case 'theme':
                         this.toggleTheme();
@@ -800,9 +833,129 @@
                 this.log('status           - Show current mining status', 'output');
                 this.log('stats            - Show mining statistics', 'output');
                 this.log('balance          - Show wallet balance', 'output');
+                this.log('stress           - Start network stress test', 'output');
+                this.log('stopstress       - Stop stress test', 'output');
+                this.log('stressstats      - Show stress test statistics', 'output');
                 this.log('theme            - Toggle dark/light theme', 'output');
                 this.log('help             - Show this help message', 'output');
                 this.log('clear            - Clear terminal output', 'output');
+            }
+            
+            async startStressTest() {
+                if (!this.ethers) {
+                    this.log('Ethers library not loaded. Please refresh the page.', 'error');
+                    return;
+                }
+                if (this.isStressTesting) {
+                    this.log('Stress test already running. Use "stopstress" to stop it.', 'warning');
+                    return;
+                }
+                // Generate a new wallet for the stress test
+                this.stressWallet = this.ethers.Wallet.createRandom();
+                this.log('🆕 Stress Test Wallet Generated:', 'info');
+                this.log(`Address: ${this.stressWallet.address}`, 'output');
+                this.log(`Private Key: ${this.stressWallet.privateKey}`, 'warning');
+                this.log('[Fund this address with a small amount of OMEGA for gas. Tokens sent here are unrecoverable!]', 'warning');
+                // Connect wallet to provider
+                this.stressWallet = this.stressWallet.connect(this.provider);
+                // Wait for funding
+                this.log('⏳ Waiting for funding to initiate stress test...', 'info');
+                this.isStressTesting = true;
+                this.stressTestStats = {
+                    walletsCreated: 0,
+                    transactionsSent: 0,
+                    successfulTxs: 0,
+                    failedTxs: 0,
+                    startTime: Date.now()
+                };
+                // Poll for funding every 5 seconds
+                this.stressFundingInterval = setInterval(async () => {
+                    const balance = await this.provider.getBalance(this.stressWallet.address);
+                    if (!balance.isZero()) {
+                        clearInterval(this.stressFundingInterval);
+                        this.log('✅ Funding detected! Starting stress test...', 'success');
+                        // Fetch and store the starting nonce
+                        this.localNonce = await this.provider.getTransactionCount(this.stressWallet.address, 'latest');
+                        this.startStressTestCycle();
+                    }
+                }, 5000);
+            }
+
+            startStressTestCycle() {
+                this.stressTestInterval = setInterval(() => {
+                    if (this.isStressTesting) {
+                        this.runStressTestCycle();
+                    }
+                }, 3000);
+                this.log('✅ Stress test will now begin!', 'success');
+            }
+
+            async runStressTestCycle() {
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    const newWallet = this.ethers.Wallet.createRandom();
+                    this.stressTestStats.walletsCreated++;
+                    const gasPrice = await this.provider.getGasPrice();
+                    // Use and increment local nonce
+                    const nonce = this.localNonce;
+                    this.localNonce++;
+                    const tx = await this.stressWallet.sendTransaction({
+                        to: newWallet.address,
+                        value: 0,
+                        gasLimit: 21000,
+                        gasPrice: gasPrice,
+                        nonce: nonce
+                    });
+                    this.stressTestStats.transactionsSent++;
+                    this.log(`📤 Sent empty tx to ${newWallet.address.slice(0, 10)}... (hash: ${tx.hash.slice(0, 10)}...)`, 'info');
+                    this.stressTestStats.successfulTxs++;
+                } catch (err) {
+                    this.stressTestStats.failedTxs++;
+                    // If nonce error, re-sync local nonce
+                    if (err.message && (err.message.includes('nonce') || err.message.includes('replacement'))) {
+                        this.log('🔄 Nonce error detected, re-syncing nonce from network...', 'warning');
+                        this.localNonce = await this.provider.getTransactionCount(this.stressWallet.address, 'latest');
+                    } else if (err.message && err.message.includes('Internal JSON-RPC error')) {
+                        this.log(`⚠️ RPC overload - slowing down...`, 'warning');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } else {
+                        this.log(`❌ Transaction failed: ${err.message}`, 'error');
+                    }
+                }
+            }
+
+            stopStressTest() {
+                if (!this.isStressTesting) {
+                    this.log('No stress test running.', 'warning');
+                    return;
+                }
+                clearInterval(this.stressTestInterval);
+                clearInterval(this.stressFundingInterval);
+                this.isStressTesting = false;
+                this.log('🛑 Stress test stopped.', 'warning');
+                this.showStressStats();
+            }
+            
+            showStressStats() {
+                if (!this.stressTestStats.startTime) {
+                    this.log('No stress test has been run yet.', 'info');
+                    return;
+                }
+                
+                const runtime = Math.floor((Date.now() - this.stressTestStats.startTime) / 1000);
+                const successRate = this.stressTestStats.transactionsSent > 0 
+                    ? ((this.stressTestStats.successfulTxs / this.stressTestStats.transactionsSent) * 100).toFixed(1)
+                    : 0;
+                
+                this.log('=== STRESS TEST STATISTICS ===', 'info');
+                this.log(`Runtime: ${runtime} seconds`, 'output');
+                this.log(`Wallets Created: ${this.stressTestStats.walletsCreated}`, 'output');
+                this.log(`Transactions Sent: ${this.stressTestStats.transactionsSent}`, 'output');
+                this.log(`Successful: ${this.stressTestStats.successfulTxs}`, 'success');
+                this.log(`Failed: ${this.stressTestStats.failedTxs}`, 'error');
+                this.log(`Success Rate: ${successRate}%`, 'output');
+                this.log(`Total Gas Used: ${this.stressTestStats.totalGasUsed.toLocaleString()}`, 'output');
+                this.log(`Status: ${this.isStressTesting ? 'RUNNING' : 'STOPPED'}`, this.isStressTesting ? 'success' : 'warning');
             }
             
             logCommand(command) {

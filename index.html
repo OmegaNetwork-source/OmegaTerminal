@@ -482,6 +482,11 @@
             </div>
         </div>
         
+        <!-- Faucet Info Box -->
+        <div id="faucetInfoBox" style="background: rgba(0, 153, 255, 0.10); border: 1px solid #99ccff; color: #99ccff; padding: 10px 16px; border-radius: 6px; margin: 0 0 12px 0; font-size: 15px;">
+            <b>Note:</b> Each wallet can only claim from the faucet once every 24 hours.<br>
+            If you try to claim again before the cooldown is over, the transaction will fail.
+        </div>
         <div class="terminal-content" id="terminalContent">
             <div class="terminal-line">
                 <span class="prompt">root@omega-miner:~$</span>
@@ -1092,9 +1097,15 @@
             }
             
             async executeCommand(command) {
-                const cmd = command.trim().toLowerCase();
+                // Hide faucet info box after first command
+                try {
+                    const infoBox = document.getElementById('faucetInfoBox');
+                    if (infoBox && infoBox.style.display !== 'none') {
+                        infoBox.style.display = 'none';
+                    }
+                } catch (e) {}
+                const cmd = command.trim().split(/\s+/)[0].toLowerCase();
                 this.logCommand(command);
-                
                 // Handle continue mining response
                 if (this.waitingForContinueResponse) {
                     this.waitingForContinueResponse = false;
@@ -1107,24 +1118,6 @@
                         return;
                     }
                 }
-                
-                if (cmd.startsWith('fund ')) {
-                    const parts = cmd.split(' ');
-                    let amount = parts[1];
-                    if (!amount) {
-                        this.log('Please specify the amount to fund. Usage: fund [amount]', 'info');
-                        return;
-                    }
-                    await this.fundStressWallet(amount);
-                    return;
-                }
-                
-                if (cmd.startsWith('theme ')) {
-                    const theme = cmd.split(' ')[1];
-                    await this.setTheme(theme);
-                    return;
-                }
-                
                 switch (cmd) {
                     case 'connect':
                         await this.connectWallet();
@@ -1133,7 +1126,7 @@
                         await this.disconnectWallet();
                         break;
                     case 'mine':
-                        await this.mine();
+                        this.log('⛏️ Mining is coming soon! Stay tuned for updates.', 'warning');
                         break;
                     case 'session':
                         await this.startMiningSession();
@@ -1208,6 +1201,18 @@
                     case 'minestats':
                         await this.showMiningStats();
                         break;
+                    case 'send':
+                        await this.sendOmega(command);
+                        break;
+                    case 'fund':
+                        const parts = command.trim().split(/\s+/);
+                        let amount = parts[1];
+                        if (!amount) {
+                            this.log('Please specify the amount to fund. Usage: fund [amount]', 'info');
+                            return;
+                        }
+                        await this.fundStressWallet(amount);
+                        return;
                     default:
                         if (cmd) {
                             this.log(`Command not found: ${command}`, 'error');
@@ -1392,9 +1397,10 @@
                 this.log('=== Available Commands ===', 'info');
                 this.log('Connect:      [connect] | Disconnect: [disconnect]', 'output');
                 this.log('Theme:        [theme dark] [theme light] [theme matrix] [theme retro]', 'output');
-                this.log('Mine:         [mine] | Claim: [claim]', 'output');
+                this.log('Mine:         [coming soon]', 'output');
                 this.log('Faucet:       [faucet] | Balance: [balance]', 'output');
                 this.log('Status:       [status] | Stats: [stats]', 'output');
+                this.log('Send:         [send <address> <amount>]', 'output');
                 this.log('Stress Test:  [stress] | Stop Stress: [stopstress] | Stress Stats: [stressstats]', 'output');
                 this.log('Fund Stress Wallet: [fund <amount>]', 'output');
                 this.log('Clear:        [clear] | Help: [help]', 'output');
@@ -1769,6 +1775,44 @@
                 } else {
                     terminal.classList.add('light-theme');
                     themeToggle.textContent = '';
+                }
+            }
+
+            async sendOmega(command) {
+                if (!this.signer) {
+                    this.log('Please connect your wallet first using: connect', 'error');
+                    return;
+                }
+                // Parse command: send <address> <amount>
+                const parts = command.trim().split(/\s+/);
+                if (parts.length !== 3) {
+                    this.log('Usage: send <address> <amount>', 'warning');
+                    return;
+                }
+                const address = parts[1];
+                const amountStr = parts[2];
+                if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+                    this.log('Invalid address format.', 'error');
+                    return;
+                }
+                let amount;
+                try {
+                    amount = this.ethers.utils.parseEther(amountStr);
+                } catch (e) {
+                    this.log('Invalid amount.', 'error');
+                    return;
+                }
+                this.log(`🚀 Sending ${amountStr} OMEGA to ${address}...`, 'info');
+                try {
+                    const tx = await this.signer.sendTransaction({
+                        to: address,
+                        value: amount
+                    });
+                    this.log('⏳ Waiting for confirmation...', 'info');
+                    await tx.wait();
+                    this.log(`✅ Sent ${amountStr} OMEGA to ${address}!`, 'success');
+                } catch (error) {
+                    this.log('❌ Send failed: ' + error.message, 'error');
                 }
             }
         }

@@ -430,6 +430,32 @@
         .terminal-line .copyable:active {
             color: #ff0000;
         }
+
+        body.theme-dark {
+            background: #000;
+            color: #fff;
+        }
+        body.theme-light {
+            background: #fff;
+            color: #111;
+        }
+        body.theme-matrix {
+            background: #000;
+            color: #00ff00;
+        }
+        body.theme-retro {
+            background: #111;
+            color: #39ff14;
+        }
+        .theme-matrix .terminal-header, .theme-retro .terminal-header {
+            border-bottom: 1px solid #00ff00;
+        }
+        .theme-matrix .input-prompt, .theme-retro .input-prompt {
+            color: #39ff14;
+        }
+        .theme-retro .input-prompt {
+            color: orange;
+        }
     </style>
 </head>
 <body>
@@ -446,7 +472,7 @@
 
     <div class="terminal" id="terminal" style="display: none;">
         <div class="terminal-header">
-            <div class="terminal-title">OMEGA MINING TERMINAL v1.0.0</div>
+            <div class="terminal-title">Omega Terminal v1.1.1</div>
             <div class="terminal-status" id="connectionStatus">DISCONNECTED</div>
             <button class="theme-toggle">Toggle Theme</button>
         </div>
@@ -701,13 +727,12 @@
                     }
                 ];
                 
+                this.loadTheme();
                 this.init();
             }
             
             async init() {
                 console.log('OmegaMinerTerminal initializing...');
-                // Load saved theme preference
-                this.loadThemePreference();
                 // Show boot animation first
                 await this.showBootAnimation();
                 // Always set up event listeners immediately after boot
@@ -725,31 +750,10 @@
                 }
             }
             
-            loadThemePreference() {
-                const savedTheme = localStorage.getItem('omega-miner-theme');
-                if (savedTheme === 'light') {
-                    this.isDarkTheme = false;
-                    this.applyTheme();
-                }
-            }
-            
-            toggleTheme() {
-                this.isDarkTheme = !this.isDarkTheme;
-                this.applyTheme();
-                localStorage.setItem('omega-miner-theme', this.isDarkTheme ? 'dark' : 'light');
-            }
-            
-            applyTheme() {
-                const terminal = document.getElementById('terminal');
-                const themeToggle = document.querySelector('.theme-toggle');
-                
-                if (this.isDarkTheme) {
-                    terminal.classList.remove('light-theme');
-                    themeToggle.textContent = '☀️ Light';
-                } else {
-                    terminal.classList.add('light-theme');
-                    themeToggle.textContent = '🌙 Dark';
-                }
+            loadTheme() {
+                const theme = localStorage.getItem('omega-terminal-theme') || 'dark';
+                document.body.classList.remove('theme-dark', 'theme-light', 'theme-matrix', 'theme-retro');
+                document.body.classList.add('theme-' + theme);
             }
             
             async showBootAnimation() {
@@ -920,6 +924,12 @@
                     return;
                 }
                 
+                if (cmd.startsWith('theme ')) {
+                    const theme = cmd.split(' ')[1];
+                    await this.setTheme(theme);
+                    return;
+                }
+                
                 switch (cmd) {
                     case 'connect':
                         await this.connectWallet();
@@ -1026,7 +1036,7 @@
                 this.mineCount = 0;
                 this.totalEarned = 0; // Reset earned amount for new session
                 this.startTime = Date.now();
-                this.log('🚀 Welcome To Omega Mining!', 'success');
+                this.log('🚀 Welcome To Omega Terminal v1.1.1!', 'success');
                 this.log('⛏️  Mining blocks with 70% reward chance (avg: 0.001 OMEGA, big: 0.01 OMEGA)', 'info');
                 this.log('💰 Rewards accumulate locally - use "claim" to collect all at once', 'info');
 
@@ -1175,28 +1185,16 @@
             }
             
             showHelp() {
-                this.log('Available Commands:', 'info');
-                this.log('  connect     - Connect MetaMask wallet', 'output');
-                this.log('  disconnect  - Disconnect wallet', 'output');
-                this.log('  mine        - Start mining for OMEGA rewards', 'output');
-                this.log('  claim       - Claim accumulated rewards', 'output');
-                this.log('  faucet      - Claim tokens from faucet', 'output');
-                this.log('  balance     - Show wallet balance', 'output');
-                this.log('  status      - Show mining status', 'output');
-                this.log('  stats       - Show mining statistics', 'output');
-                this.log('  stress      - Start network stress test', 'output');
-                this.log('  stopstress  - Stop stress test', 'output');
-                this.log('  stressstats - Show stress test statistics', 'output');
-                this.log('  fund        - Fund stress test wallet with OMEGA', 'output');
-                this.log('  clear       - Clear terminal output', 'output');
-                this.log('  stop        - Stop all activities', 'output');
-                this.log('  help        - Show this help menu', 'output');
-                this.log('  rickroll    - Rickroll yourself', 'output');
-                this.log('  fortune     - Get a fortune', 'output');
-                this.log('  matrix      - Enter the matrix', 'output');
-                this.log('  hack        - Activate hacker mode', 'output');
-                this.log('  disco       - Disco mode', 'output');
-                this.log('  sudo mine   - Admin mining mode', 'output');
+                this.log('=== Available Commands ===', 'info');
+                this.log('Connect:      [connect] | Disconnect: [disconnect]', 'output');
+                this.log('Theme:        [theme dark] [theme light] [theme matrix] [theme retro]', 'output');
+                this.log('Mine:         [mine] | Claim: [claim]', 'output');
+                this.log('Faucet:       [faucet] | Balance: [balance]', 'output');
+                this.log('Status:       [status] | Stats: [stats]', 'output');
+                this.log('Stress Test:  [stress] | Stop Stress: [stopstress] | Stress Stats: [stressstats]', 'output');
+                this.log('Fund Stress Wallet: [fund <amount>]', 'output');
+                this.log('Clear:        [clear] | Help: [help]', 'output');
+                this.log('Fun:          [rickroll] [fortune] [matrix] [hack] [disco] [sudo mine]', 'output');
             }
             
             async showBalance() {
@@ -1208,9 +1206,9 @@
                 try {
                     const address = await this.signer.getAddress();
                     const balance = await this.provider.getBalance(address);
-                    const ethBalance = this.ethers.utils.formatEther(balance);
+                    const omegaBalance = this.ethers.utils.formatEther(balance);
                     
-                    this.log(`💰 Wallet Balance: ${ethBalance} ETH`, 'success');
+                    this.log(`�� Wallet Balance: ${omegaBalance} OMEGA`, 'success');
                     this.log(`📍 Address: ${address}`, 'info');
                     this.log(`💳 Pending Rewards: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
                 } catch (error) {
@@ -1536,6 +1534,37 @@
                     this.log('🚀 Stress test will automatically start once funding is detected...', 'info');
                 } catch (error) {
                     this.log('❌ Failed to fund stress test wallet: ' + error.message, 'error');
+                }
+            }
+
+            async setTheme(theme) {
+                const validThemes = ['dark', 'light', 'matrix', 'retro'];
+                if (!validThemes.includes(theme)) {
+                    this.log('Invalid theme. Available: dark, light, matrix, retro', 'error');
+                    return;
+                }
+                document.body.classList.remove('theme-dark', 'theme-light', 'theme-matrix', 'theme-retro');
+                document.body.classList.add('theme-' + theme);
+                localStorage.setItem('omega-terminal-theme', theme);
+                this.log(`Theme set to ${theme}`, 'success');
+            }
+
+            toggleTheme() {
+                this.isDarkTheme = !this.isDarkTheme;
+                this.applyTheme();
+                localStorage.setItem('omega-miner-theme', this.isDarkTheme ? 'dark' : 'light');
+            }
+            
+            applyTheme() {
+                const terminal = document.getElementById('terminal');
+                const themeToggle = document.querySelector('.theme-toggle');
+                
+                if (this.isDarkTheme) {
+                    terminal.classList.remove('light-theme');
+                    themeToggle.textContent = '☀️ Light';
+                } else {
+                    terminal.classList.add('light-theme');
+                    themeToggle.textContent = '🌙 Dark';
                 }
             }
         }

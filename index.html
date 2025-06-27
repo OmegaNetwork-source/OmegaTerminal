@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https:;">
     <title>Omega Terminal - Mining Interface</title>
     <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
     <style>
@@ -85,6 +86,10 @@
             overflow-y: auto;
             padding-right: 10px;
             margin-bottom: 20px;
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
         }
 
         .terminal-line {
@@ -104,6 +109,10 @@
         .output {
             color: #cccccc;
             margin-left: 20px;
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
         }
 
         .error {
@@ -397,6 +406,30 @@
             color: #ff3333 !important;
             font-weight: bold !important;
         }
+
+        .terminal-content, .output, .output.error, .output.success, .output.info, .output.warning,
+        .terminal-content *, .output *, .output.error *, .output.success *, .output.info *, .output.warning * {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+        }
+
+        .terminal-line .copyable {
+            cursor: pointer;
+            text-decoration: underline;
+            color: #00ff00;
+            transition: all 0.3s ease;
+        }
+        
+        .terminal-line .copyable:hover {
+            color: #ffff00;
+            text-shadow: 0 0 10px #ffff00;
+        }
+        
+        .terminal-line .copyable:active {
+            color: #ff0000;
+        }
     </style>
 </head>
 <body>
@@ -430,28 +463,7 @@
                 <span class="prompt">root@omega-miner:~$</span>
                 <span class="command"> ./omega-miner --help</span>
             </div>
-            <div class="output error">Available commands:</div>
-            <div class="output error">  connect          - Connect wallet</div>
-            <div class="output error">  disconnect       - Disconnect wallet</div>
-            <div class="output error">  mine             - Start mining</div>
-            <div class="output error">  status           - Show mining status</div>
-            <div class="output error">  stats            - Show mining statistics</div>
-            <div class="output error">  balance          - Show wallet balance</div>
-            <div class="output error">  faucet           - Get 5 OMEGA (once per day, 2 min global cooldown)</div>
-            <div class="output error">  stress           - Start stress test</div>
-            <div class="output error">  stopstress       - Stop stress test</div>
-            <div class="output error">  stressstats      - Show stress test statistics</div>
-            <div class="output error">  help             - Show this help</div>
-            <div class="output error">  clear            - Clear terminal</div>
-            <div class="output error">Funny Prompts</div>
-            <div class="output error">  ---></div>
-            <div class="output error">  rickroll         - ???</div>
-            <div class="output error">  fortune          - Get a crypto fortune</div>
-            <div class="output error">  matrix           - Enter the Matrix</div>
-            <div class="output error">  hack             - Hack the planet</div>
-            <div class="output error">  disco            - Disco mode</div>
-            <div class="output error">  sudo mine        - Sudoers joke</div>
-            <div class="output error">  <---</div>
+            <div class="output error">Type 'help' to see a list of commands</div>
         </div>
 
         <div class="terminal-input-section">
@@ -586,6 +598,7 @@
                 
                 // New mining system properties
                 this.pendingClaimableBalance = 0;
+                this.totalEarned = 0; // Track total earned during session
                 this.waitingForContinueResponse = false;
                 
                 // Stress test properties
@@ -603,7 +616,8 @@
                 
                 // Contract properties
                 this.contractAddress = '0x0d4a5d6d28ce3d79dfd145b3ca5286a50c2f9895'; // Deployed OmegaMiner contract
-                this.faucetAddress = '0x5a8b762b3b3e9e505288af5494d83e631d9cf2cb'; // Deployed OmegaFaucet contract
+                this.faucetAddress = '0xdc7bc9e4c225a2e6b23d3b639f07ed7d4723b896'; // Deployed OmegaFaucet contract
+                this.minerFaucetAddress = '0x1c4ffffcc804ba265f6cfccffb94d0ae28b36207'; // Deployed OmegaMinerFaucet contract
                 this.contractABI = [
                     "function depositForMining() external payable",
                     "function startMining() external",
@@ -663,32 +677,51 @@
                         "type": "function"
                     }
                 ];
+                this.minerFaucetABI = [
+                    {
+                        "inputs": [],
+                        "name": "mine",
+                        "outputs": [],
+                        "stateMutability": "payable",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                        "name": "totalMined",
+                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                        "name": "lastMineTime",
+                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }
+                ];
                 
                 this.init();
             }
             
             async init() {
                 console.log('OmegaMinerTerminal initializing...');
-                
                 // Load saved theme preference
                 this.loadThemePreference();
-                
                 // Show boot animation first
                 await this.showBootAnimation();
-                
+                // Always set up event listeners immediately after boot
+                this.setupEventListeners();
                 try {
                     console.log('Loading ethers library...');
                     this.ethers = await loadEthers();
                     console.log('Ethers library loaded successfully');
                     this.log('Ethers library loaded successfully', 'success');
-                    this.setupEventListeners();
                     this.checkWalletConnection();
                 } catch (error) {
                     console.error('Failed to load ethers:', error);
                     this.log('Failed to load ethers library: ' + error.message, 'error');
                     this.log('Please check your internet connection and refresh the page', 'error');
-                    // Still show the terminal even if ethers fails
-                    this.setupEventListeners();
                 }
             }
             
@@ -741,21 +774,23 @@
                 const input = document.getElementById('commandInput');
                 if (input) {
                     input.focus();
-                    input.addEventListener('keypress', (e) => {
+                    // Bind the event handler to the class instance
+                    const boundExecuteCommand = this.executeCommand.bind(this);
+                    input.addEventListener('keypress', function(e) {
                         if (e.key === 'Enter') {
-                            this.executeCommand(input.value);
+                            boundExecuteCommand(input.value);
                             input.value = '';
                         }
                         // Ctrl+C to stop stress test
                         if (e.key === 'c' && e.ctrlKey) {
-                            if (this.isStressTesting) {
-                                this.stopStressTest();
-                                this.log('^C (stress test stopped by user)', 'warning');
-                            }
+                            // 'this' is not needed here, as isStressTesting is not used in this context
                         }
                     });
+                    // Fallback: refocus input if user clicks anywhere in the terminal
+                    document.getElementById('terminal').addEventListener('click', function() {
+                        input.focus();
+                    });
                 }
-                
                 // Setup theme toggle
                 const themeToggle = document.querySelector('.theme-toggle');
                 if (themeToggle) {
@@ -874,6 +909,17 @@
                     }
                 }
                 
+                if (cmd.startsWith('fund ')) {
+                    const parts = cmd.split(' ');
+                    let amount = parts[1];
+                    if (!amount) {
+                        this.log('Please specify the amount to fund. Usage: fund [amount]', 'info');
+                        return;
+                    }
+                    await this.fundStressWallet(amount);
+                    return;
+                }
+                
                 switch (cmd) {
                     case 'connect':
                         await this.connectWallet();
@@ -882,7 +928,7 @@
                         await this.disconnectWallet();
                         break;
                     case 'mine':
-                        await this.startMiningStressTest();
+                        await this.mine();
                         break;
                     case 'session':
                         await this.startMiningSession();
@@ -891,7 +937,7 @@
                         await this.faucetClaim();
                         break;
                     case 'claim':
-                        await this.claimFaucet();
+                        await this.claim();
                         break;
                     case 'pending':
                         await this.showPendingRewards();
@@ -954,6 +1000,9 @@
                     case 'sudo mine':
                         this.sudoMine();
                         break;
+                    case 'minestats':
+                        await this.showMiningStats();
+                        break;
                     default:
                         if (cmd) {
                             this.log(`Command not found: ${command}`, 'error');
@@ -962,527 +1011,307 @@
                 }
             }
             
-            async startMiningStressTest() {
-                if (this.isMining) {
-                    this.log('Mining already in progress', 'warning');
-                    return;
-                }
-                
+            async mine() {
                 if (!this.signer) {
-                    this.log('Please connect wallet first using "connect" command', 'error');
+                    this.log('Please connect your wallet first using: connect', 'error');
                     return;
                 }
-                
-                // Check if we're using fallback ethers
-                try {
-                    const address = await this.signer.getAddress();
-                    if (address === '0x0000000000000000000000000000000000000000') {
-                        this.log('❌ Cannot mine with fallback ethers - no real transactions available', 'error');
-                        this.log('💡 Please refresh the page and ensure ethers.js loads from CDN', 'info');
+
+                if (this.isMining) {
+                    this.log('Mining is already in progress. Use "stop" to stop mining.', 'error');
+                    return;
+                }
+
+                this.isMining = true;
+                this.mineCount = 0;
+                this.totalEarned = 0; // Reset earned amount for new session
+                this.startTime = Date.now();
+                this.log('🚀 Welcome To Omega Mining!', 'success');
+                this.log('⛏️  Mining blocks with 70% reward chance (avg: 0.001 OMEGA, big: 0.01 OMEGA)', 'info');
+                this.log('💰 Rewards accumulate locally - use "claim" to collect all at once', 'info');
+
+                const mineInterval = setInterval(async () => {
+                    if (!this.isMining) {
+                        clearInterval(mineInterval);
                         return;
                     }
-                } catch (error) {
-                    this.log('❌ Cannot verify wallet connection - please reconnect', 'error');
-                    return;
-                }
-                
-                this.isMining = true;
-                this.log('⛏️ Starting Omega mining...', 'info');
-                this.log('Omega Mining is the easiest way to earn Omega Token. Happy Mining!', 'info');
-                this.log('------------------------------------------', 'info');
-                
-                let blockCount = 0;
-                let claimableBalance = 0;
-                let hasGivenFirstBonus = false;
-                const miningAnimations = ['⛏️','🪓','⚒️','🔨','Ω'];
-                let animIndex = 0;
-                
-                // Check if this is the first time mining (for 0.1 OMEGA bonus)
-                const firstTimeKey = 'omega-miner-first-bonus';
-                const hasReceivedFirstBonus = localStorage.getItem(firstTimeKey);
-                
-                // Start mining loop
-                while (this.isMining) {
+
                     try {
-                        // Use the user's connected wallet for transactions
-                        const address = await this.signer.getAddress();
-                        const toAddress = this.ethers.Wallet.createRandom().address;
+                        this.mineCount++;
                         
-                        const gasPrice = await this.provider.getGasPrice();
-                        const tx = await this.signer.sendTransaction({
-                            to: toAddress,
-                            value: 0,
-                            gasLimit: 21000,
-                            gasPrice: gasPrice
-                        });
+                        // Generate fake mining progress
+                        const difficulty = Math.floor(Math.random() * 8) + 4; // 4-12 leading zeros
+                        const nonce = Math.floor(Math.random() * 1000000);
+                        const blockHash = this.generateFakeHash();
                         
-                        blockCount++;
-                        const anim = miningAnimations[animIndex % miningAnimations.length];
-                        this.log(`${anim} Mining... [Block #${blockCount}] Ω Sent tx: ${tx.hash.slice(0, 12)}...`, 'output');
-                        animIndex++;
+                        this.log(`⛏️  Mining block #${this.mineCount}...`, 'info');
+                        this.log(`🎯 Target: ${'0'.repeat(difficulty)}...`, 'output');
+                        this.log(`🔢 Nonce: ${nonce}`, 'output');
+                        this.log(`📦 Hash: ${blockHash}`, 'output');
                         
-                        await tx.wait();
-                        this.log(`🟢 Transaction confirmed: ${tx.hash.slice(0, 12)}...`, 'success');
+                        // Simulate mining time
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                         
-                        // First-time bonus (0.1 OMEGA in first 5 seconds)
-                        if (!hasGivenFirstBonus && !hasReceivedFirstBonus && blockCount <= 5) {
-                            claimableBalance += 0.1;
-                            hasGivenFirstBonus = true;
-                            localStorage.setItem(firstTimeKey, 'true');
-                            this.log(`🎁 FIRST-TIME BONUS! +0.1 OMEGA`, 'success');
-                        }
-                        
-                        // Random reward chance (average 0.0001 per minute)
-                        const rewardChance = Math.random();
-                        if (rewardChance < 0.15) { // 15% chance per block (roughly 0.0001/min)
-                            let rewardAmount;
-                            const rareChance = Math.random();
+                        // Calculate reward (70% chance every block)
+                        if (Math.random() < 0.7) {
+                            const randomValue = Math.floor(Math.random() * 1000);
+                            let reward;
                             
-                            if (rareChance < 0.001) { // 0.1% chance for max reward
-                                rewardAmount = 1.0;
-                                this.log(`🎉 JACKPOT! +${rewardAmount} OMEGA`, 'success');
-                            } else if (rareChance < 0.01) { // 0.9% chance for medium reward
-                                rewardAmount = 0.01;
-                                this.log(`🎊 MEDIUM REWARD! +${rewardAmount} OMEGA`, 'success');
-                            } else { // Normal small reward
-                                rewardAmount = 0.0001 + (Math.random() * 0.0009); // 0.0001 to 0.001
-                                this.log(`💰 REWARD! +${rewardAmount.toFixed(6)} OMEGA`, 'success');
+                            if (randomValue === 999) { // 0.1% chance for whole block
+                                reward = 1.0;
+                                this.log(`🏆 WHOLE BLOCK MINED! +1.0 OMEGA`, 'success');
+                            } else if (randomValue >= 950) { // 5% chance for bigger reward
+                                reward = 0.01;
+                                this.log(`💰 Big reward: +0.01 OMEGA`, 'success');
+                            } else {
+                                reward = (randomValue * 0.001) / 1000; // 0.001 average (10x more)
+                                this.log(`💰 Block reward: +${reward.toFixed(6)} OMEGA`, 'success');
                             }
                             
-                            claimableBalance += rewardAmount;
+                            this.totalEarned += reward;
+                            this.log(`💳 Total earned this session: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
+                        } else {
+                            this.log(`⛏️  Block mined (no reward this time)`, 'output');
                         }
                         
-                        // Update the pending claimable balance property
-                        this.pendingClaimableBalance = claimableBalance;
-                        
-                        // Display current claimable balance
-                        if (claimableBalance > 0) {
-                            this.log(`💳 Current Claimable Balance: ${claimableBalance.toFixed(6)} OMEGA`, 'info');
-                        }
-                        
-                    } catch (err) {
-                        this.log(`❌ Mining tx failed: ${err.message}`, 'error');
+                    } catch (error) {
+                        this.log(`❌ Mining failed: ${error.message}`, 'error');
                     }
-                    
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-                
-                this.isMining = false;
-                this.log('⛔ Mining stopped.', 'warning');
-                this.log(`📊 Mining Summary: ${blockCount} blocks mined`, 'info');
-                
-                if (claimableBalance > 0) {
-                    this.log(`💰 Final Claimable Balance: ${claimableBalance.toFixed(6)} OMEGA`, 'success');
-                    this.log(`💡 Type 'claim' to collect your rewards!`, 'success');
-                    
-                    // Ask if they want to continue mining
-                    this.log('🤔 Do you want to continue mining? (Type "yes" to continue, anything else to stop)', 'info');
-                    this.waitingForContinueResponse = true;
-                    this.pendingClaimableBalance = claimableBalance;
-                } else {
-                    this.log('💡 No rewards earned this session. Try mining again!', 'info');
-                }
+                }, 10000); // Mine every 10 seconds (faster for better UX)
+
+                this.log('Mining started. Use "stop" to stop mining, "claim" to collect rewards.', 'info');
             }
             
-            async claimFaucet() {
+            generateFakeHash() {
+                const chars = '0123456789abcdef';
+                let hash = '0x';
+                for (let i = 0; i < 64; i++) {
+                    hash += chars[Math.floor(Math.random() * chars.length)];
+                }
+                return hash;
+            }
+            
+            async claim() {
                 if (!this.signer) {
                     this.log('Please connect wallet first using "connect" command', 'error');
                     return;
                 }
                 
-                if (this.pendingClaimableBalance <= 0) {
+                if (this.totalEarned <= 0) {
                     this.log('❌ No rewards available to claim. Mine first to earn rewards!', 'warning');
                     return;
                 }
                 
                 try {
                     const address = await this.signer.getAddress();
-                    const rewardAmount = this.pendingClaimableBalance;
+                    const rewardAmount = this.totalEarned;
                     
                     this.log(`💰 Claiming ${rewardAmount.toFixed(6)} OMEGA...`, 'info');
                     this.log('⏳ Processing reward transfer...', 'info');
                     
-                    // Simulate the reward process
-                    this.log(`📦 Reward transaction simulated: 0x${Math.random().toString(16).substr(2, 64)}`, 'info');
-                    this.log('⏳ Waiting for confirmation...', 'info');
-                    
-                    // Simulate transaction confirmation
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    this.log(`🎉 REWARDS CLAIMED! +${rewardAmount.toFixed(6)} OMEGA sent to ${address}`, 'success');
-                    this.log(`✅ Your mining rewards have been processed!`, 'success');
-                    
-                    // Reset the pending balance
-                    this.pendingClaimableBalance = 0;
-                    
-                    // Ask if they want to continue mining
-                    this.log('🤔 Do you want to continue mining? (Type "yes" to continue, anything else to stop)', 'info');
-                    this.waitingForContinueResponse = true;
+                    // Minimal ABI for native faucet
+                    const faucetAbi = [
+                        { "inputs": [], "name": "claimReward", "outputs": [], "stateMutability": "nonpayable", "type": "function" }
+                    ];
+                    const faucetContract = new this.ethers.Contract(
+                        this.faucetAddress,
+                        faucetAbi,
+                        this.signer
+                    );
+                    try {
+                        this.log('🪙 Processing reward transfer...', 'info');
+                        const tx = await faucetContract.claimReward({ gasLimit: 100000 });
+                        await tx.wait();
+                        this.log('✅ Reward claimed! OMEGA sent to your wallet.', 'success');
+                        this.totalEarned = 0;
+                    } catch (err) {
+                        this.log('❌ Failed to claim rewards: ' + (err && err.message ? err.message : err), 'error');
+                    }
                     
                 } catch (error) {
                     console.error('Claim error:', error);
                     this.log(`❌ Failed to claim rewards: ${error.message}`, 'error');
-                    this.log('💡 Please try again or contact support', 'info');
                 }
-            }
-
-            stopMining() {
-                this.isMining = false;
             }
             
-            stopAll() {
-                let stoppedSomething = false;
-                
-                // Stop mining if running
-                if (this.isMining) {
-                    this.stopMining();
-                    this.log('⛔ Mining stopped.', 'warning');
-                    stoppedSomething = true;
-                }
-                
-                // Stop stress test if running
-                if (this.isStressTesting) {
-                    this.stopStressTest();
-                    stoppedSomething = true;
-                }
-                
-                if (!stoppedSomething) {
-                    this.log('Nothing is currently running to stop.', 'info');
-                } else {
-                    this.log('✅ All operations stopped.', 'success');
-                }
+            // Add missing methods that are referenced in the code
+            logCommand(command) {
+                const terminalContent = document.getElementById('terminalContent');
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                line.innerHTML = `<span class="prompt">root@omega-miner:~$</span><span class="command"> ${command}</span>`;
+                terminalContent.appendChild(line);
+                terminalContent.scrollTop = terminalContent.scrollHeight;
             }
             
             log(message, type = 'output') {
-                const content = document.getElementById('terminalContent');
+                const terminalContent = document.getElementById('terminalContent');
                 const line = document.createElement('div');
                 line.className = `output ${type}`;
                 line.textContent = message;
-                content.appendChild(line);
-                content.scrollTop = content.scrollHeight;
+                terminalContent.appendChild(line);
+                terminalContent.scrollTop = terminalContent.scrollHeight;
             }
             
-            async showStatus() {
-                if (!this.signer) {
-                    this.log('Wallet not connected. Use "connect" command first.', 'error');
-                    return;
-                }
-                
-                const address = await this.signer.getAddress();
-                const balance = await this.provider.getBalance(address);
-                const balanceEth = this.ethers.utils.formatEther(balance);
-                
-                this.log('=== MINING STATUS ===', 'info');
-                this.log(`Wallet: ${address}`, 'output');
-                this.log(`Balance: ${balanceEth} OMEGA`, 'output');
-                this.log(`Mining: ${this.isMining ? 'ACTIVE' : 'INACTIVE'}`, this.isMining ? 'success' : 'warning');
-                this.log(`Contract: ${this.contract ? 'CONNECTED' : 'NOT DEPLOYED'}`, this.contract ? 'success' : 'error');
-                this.log(`Current Nonce: ${this.currentNonce}`, 'output');
+            logHtml(html, type = 'output') {
+                const terminalContent = document.getElementById('terminalContent');
+                const line = document.createElement('div');
+                line.className = `terminal-line ${type}`;
+                line.innerHTML = html;
+                terminalContent.appendChild(line);
+                terminalContent.scrollTop = terminalContent.scrollHeight;
             }
             
-            async showStats() {
-                if (!this.contract) {
-                    this.log('Mining contract not deployed or connected.', 'error');
-                    return;
+            clearTerminal() {
+                const terminalContent = document.getElementById('terminalContent');
+                terminalContent.innerHTML = '';
+            }
+            
+            updateConnectionStatus(status) {
+                const statusElement = document.getElementById('connectionStatus');
+                if (statusElement) {
+                    statusElement.textContent = status;
                 }
-                
-                try {
-                    const address = await this.signer.getAddress();
-                    const [blocksMined, totalReward, lastMined] = await this.contract.getMiningStats(address);
-                    const difficulty = await this.contract.getMiningDifficulty();
-                    const reward = await this.contract.getMiningReward();
-                    
-                    this.log('=== MINING STATISTICS ===', 'info');
-                    this.log(`Blocks Mined: ${blocksMined.toString()}`, 'output');
-                    this.log(`Total Reward: ${this.ethers.utils.formatEther(totalReward)} OMEGA`, 'output');
-                    this.log(`Last Mined: ${lastMined.toString() === '0' ? 'Never' : new Date(lastMined.toNumber() * 1000).toLocaleString()}`, 'output');
-                    this.log(`Difficulty: ${difficulty.toString()} leading zeros`, 'output');
-                    this.log(`Reward per Block: ${this.ethers.utils.formatEther(reward)} OMEGA`, 'output');
-                } catch (error) {
-                    this.log(`Failed to get stats: ${error.message}`, 'error');
-                }
+            }
+            
+            showHelp() {
+                this.log('Available Commands:', 'info');
+                this.log('  connect     - Connect MetaMask wallet', 'output');
+                this.log('  disconnect  - Disconnect wallet', 'output');
+                this.log('  mine        - Start mining for OMEGA rewards', 'output');
+                this.log('  claim       - Claim accumulated rewards', 'output');
+                this.log('  faucet      - Claim tokens from faucet', 'output');
+                this.log('  balance     - Show wallet balance', 'output');
+                this.log('  status      - Show mining status', 'output');
+                this.log('  stats       - Show mining statistics', 'output');
+                this.log('  stress      - Start network stress test', 'output');
+                this.log('  stopstress  - Stop stress test', 'output');
+                this.log('  stressstats - Show stress test statistics', 'output');
+                this.log('  fund        - Fund stress test wallet with OMEGA', 'output');
+                this.log('  clear       - Clear terminal output', 'output');
+                this.log('  stop        - Stop all activities', 'output');
+                this.log('  help        - Show this help menu', 'output');
+                this.log('  rickroll    - Rickroll yourself', 'output');
+                this.log('  fortune     - Get a fortune', 'output');
+                this.log('  matrix      - Enter the matrix', 'output');
+                this.log('  hack        - Activate hacker mode', 'output');
+                this.log('  disco       - Disco mode', 'output');
+                this.log('  sudo mine   - Admin mining mode', 'output');
             }
             
             async showBalance() {
                 if (!this.signer) {
-                    this.log('Wallet not connected. Use "connect" command first.', 'error');
+                    this.log('Please connect your wallet first using: connect', 'error');
                     return;
                 }
                 
                 try {
                     const address = await this.signer.getAddress();
                     const balance = await this.provider.getBalance(address);
-                    const balanceEth = this.ethers.utils.formatEther(balance);
+                    const ethBalance = this.ethers.utils.formatEther(balance);
                     
-                    this.log('=== WALLET BALANCE ===', 'info');
-                    this.log(`💰 Wallet Balance: ${balanceEth} OMEGA`, 'success');
-                    
-                    // Show pending claimable balance
-                    if (this.pendingClaimableBalance > 0) {
-                        this.log(`💳 Pending Rewards: ${this.pendingClaimableBalance.toFixed(6)} OMEGA`, 'success');
-                        this.log(`💡 Type 'claim' to collect your rewards!`, 'info');
-                    } else {
-                        this.log(`💳 Pending Rewards: 0 OMEGA`, 'warning');
-                        this.log(`💡 Start mining to earn rewards!`, 'info');
-                    }
-                    
-                    if (this.contract) {
-                        const tokenBalance = await this.contract.balanceOf(address);
-                        const tokenBalanceEth = this.ethers.utils.formatEther(tokenBalance);
-                        this.log(`⛏️ Mined Tokens: ${tokenBalanceEth} OMEGA`, 'success');
-                    }
+                    this.log(`💰 Wallet Balance: ${ethBalance} ETH`, 'success');
+                    this.log(`📍 Address: ${address}`, 'info');
+                    this.log(`💳 Pending Rewards: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
                 } catch (error) {
-                    this.log(`Failed to get balance: ${error.message}`, 'error');
+                    this.log('❌ Failed to get balance: ' + error.message, 'error');
                 }
             }
             
-            async showPendingRewards() {
+            async showStatus() {
                 if (!this.signer) {
-                    this.log('Wallet not connected. Use "connect" command first.', 'error');
-                    return;
-                }
-                
-                this.log('=== PENDING REWARDS ===', 'info');
-                
-                if (this.pendingClaimableBalance > 0) {
-                    this.log(`💰 Pending Rewards: ${this.pendingClaimableBalance.toFixed(6)} OMEGA`, 'success');
-                    this.log(`💡 Type 'claim' to collect your rewards!`, 'success');
-                } else {
-                    this.log(`💰 Pending Rewards: 0 OMEGA`, 'warning');
-                    this.log(`💡 Start mining to earn rewards!`, 'info');
-                }
-                
-                // Check if first-time bonus has been given
-                const firstTimeKey = 'omega-miner-first-bonus';
-                const hasReceivedFirstBonus = localStorage.getItem(firstTimeKey);
-                
-                if (hasReceivedFirstBonus) {
-                    this.log(`🎁 First-time bonus: Already claimed`, 'info');
-                } else {
-                    this.log(`🎁 First-time bonus: Available (0.1 OMEGA)`, 'success');
-                }
-                
-                this.log('', 'output');
-                this.log('=== REWARD SYSTEM ===', 'info');
-                this.log('• Mining sends real transactions to the network', 'output');
-                this.log('• Earn random rewards at intervals during mining', 'output');
-                this.log('• First-time bonus: 0.1 OMEGA in first 5 seconds', 'output');
-                this.log('• Use "claim" to collect rewards to your wallet', 'output');
-            }
-            
-            async showFaucetStatus() {
-                if (!this.signer) {
-                    this.log('Please connect wallet first using "connect" command', 'error');
-                    return;
-                }
-                
-                if (this.faucetAddress === '0x0000000000000000000000000000000000000000') {
-                    this.log('🚰 Faucet contract not deployed yet.', 'warning');
-                    this.log('💡 Deploy the OmegaFaucet contract first using the deployment script.', 'info');
+                    this.log('❌ Wallet not connected', 'error');
                     return;
                 }
                 
                 try {
-                    const faucetContract = new this.ethers.Contract(this.faucetAddress, this.faucetABI, this.signer);
                     const address = await this.signer.getAddress();
-                    
-                    this.log('=== FAUCET STATUS ===', 'info');
-                    
-                    // Get faucet balance
-                    try {
-                        const faucetBalance = await faucetContract.getFaucetBalance();
-                        const totalDistributed = await faucetContract.totalRewardsDistributed();
-                        
-                        this.log(`💰 Faucet Balance: ${this.ethers.utils.formatEther(faucetBalance)} OMEGA`, 'output');
-                        this.log(`📊 Total Distributed: ${this.ethers.utils.formatEther(totalDistributed)} OMEGA`, 'output');
-                        
-                        if (faucetBalance.isZero()) {
-                            this.log('❌ Faucet is empty! No rewards available.', 'warning');
-                            this.log('💡 The faucet needs to be refilled with OMEGA tokens.', 'info');
-                        } else {
-                            this.log('✅ Faucet has rewards available!', 'success');
-                        }
-                    } catch (balanceError) {
-                        this.log('⚠️ Could not check faucet balance', 'warning');
-                    }
-                    
-                    // Get user's mining session info
-                    try {
-                        const [sessionStart, blocksMined, totalRewards, lastClaim, isActive] = 
-                            await faucetContract.getMiningSession(address);
-                        
-                        this.log('--- Your Mining Session ---', 'info');
-                        this.log(`⛏️ Active Session: ${isActive ? 'YES' : 'NO'}`, isActive ? 'success' : 'warning');
-                        this.log(`📦 Blocks Mined: ${blocksMined.toString()}`, 'output');
-                        this.log(`💰 Total Rewards Earned: ${this.ethers.utils.formatEther(totalRewards)} OMEGA`, 'output');
-                        
-                        if (sessionStart > 0) {
-                            const sessionAge = Math.floor((Date.now() / 1000) - sessionStart.toNumber());
-                            const sessionAgeMinutes = Math.floor(sessionAge / 60);
-                            this.log(`⏰ Session Age: ${sessionAgeMinutes} minutes`, 'output');
-                        }
-                        
-                        if (lastClaim > 0) {
-                            const timeSinceClaim = Math.floor((Date.now() / 1000) - lastClaim.toNumber());
-                            const timeSinceClaimMinutes = Math.floor(timeSinceClaim / 60);
-                            this.log(`🕐 Time Since Last Claim: ${timeSinceClaimMinutes} minutes`, 'output');
-                        }
-                        
-                    } catch (sessionError) {
-                        this.log('⚠️ Could not check mining session', 'warning');
-                    }
-                    
-                    this.log('--- Reward System ---', 'info');
-                    this.log('🎰 8% chance of reward per claim attempt', 'output');
-                    this.log('⏰ 30-second cooldown between claims', 'output');
-                    this.log('⏳ 1-hour session timeout', 'output');
-                    this.log('💡 Use "mine" to start mining, then "claim" to try for rewards!', 'info');
-                    
+                    this.log(`✅ Wallet: ${address}`, 'success');
+                    this.log(`⛏️  Mining: ${this.isMining ? 'Active' : 'Inactive'}`, 'info');
+                    this.log(`💰 Pending: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
+                    this.log(`📊 Blocks Mined: ${this.mineCount || 0}`, 'info');
                 } catch (error) {
-                    this.log(`❌ Failed to get faucet status: ${error.message}`, 'error');
+                    this.log('❌ Failed to get status: ' + error.message, 'error');
                 }
+            }
+            
+            async showStats() {
+                this.log('📊 Mining Statistics:', 'info');
+                this.log(`⛏️  Total Blocks: ${this.mineCount || 0}`, 'output');
+                this.log(`💰 Total Earned: ${this.totalEarned.toFixed(6)} OMEGA`, 'output');
+                this.log(`⏱️  Session Time: ${this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0}s`, 'output');
+            }
+            
+            stopAll() {
+                let stoppedActivities = [];
+                
+                // Stop mining
+                if (this.isMining) {
+                    this.isMining = false;
+                    if (this.miningInterval) {
+                        clearInterval(this.miningInterval);
+                        this.miningInterval = null;
+                    }
+                    stoppedActivities.push('mining');
+                }
+                
+                // Stop stress testing
+                if (this.isStressTesting) {
+                    this.isStressTesting = false;
+                    if (this.stressTestInterval) {
+                        clearInterval(this.stressTestInterval);
+                        this.stressTestInterval = null;
+                    }
+                    stoppedActivities.push('stress testing');
+                }
+                
+                if (stoppedActivities.length > 0) {
+                    this.log(`⏹️  Stopped: ${stoppedActivities.join(', ')}`, 'success');
+                } else {
+                    this.log('⏹️  No activities were running to stop', 'info');
+                }
+            }
+            
+            async startMiningSession() {
+                this.log('🚀 Starting mining session...', 'info');
+                await this.mine();
             }
             
             async faucetClaim() {
                 if (!this.signer) {
-                    this.log('Please connect wallet first using "connect" command', 'error');
+                    this.log('Please connect your wallet first using: connect', 'error');
                     return;
                 }
-                if (!this.faucetAddress || this.faucetAddress === 'REPLACE_WITH_FAUCET_CONTRACT_ADDRESS') {
-                    this.log('Faucet contract not configured. Please set the address after deployment.', 'error');
-                    return;
-                }
+                
                 try {
-                    const faucet = new this.ethers.Contract(this.faucetAddress, this.faucetABI, this.signer);
-                    const tx = await faucet.claim();
-                    this.log('⏳ Faucet claim transaction sent. Waiting for confirmation...', 'info');
+                    this.log('🚰 Claiming from faucet...', 'info');
+                    const faucetContract = new this.ethers.Contract(this.faucetAddress, this.faucetABI, this.signer);
+                    const tx = await faucetContract.claim({ gasLimit: 100000 });
                     await tx.wait();
-                    this.log('✅ 5 OMEGA sent to your wallet! You can claim again in 24 hours.', 'success');
-                } catch (err) {
-                    // Try to parse error for cooldowns
-                    const msg = err.message || err.toString();
-                    if (msg.includes('wait 24h')) {
-                        this.log('⏳ You have already claimed from the faucet in the last 24 hours. Please wait.', 'warning');
-                    } else if (msg.includes('global cooldown')) {
-                        this.log('⏳ Faucet is cooling down. Please wait 2 minutes between claims.', 'warning');
-                    } else if (msg.includes('insufficient funds')) {
-                        this.log('❌ Faucet is empty. Please notify the admin to refill it.', 'error');
-                    } else {
-                        this.log('❌ Faucet claim failed: ' + msg, 'error');
-                    }
+                    this.log('✅ Faucet claim successful!', 'success');
+                } catch (error) {
+                    this.log('❌ Faucet claim failed: ' + error.message, 'error');
                 }
             }
             
-            showHelp() {
-                this.log('=== AVAILABLE COMMANDS ===', 'info');
-                this.log('connect          - Connect MetaMask wallet', 'error');
-                this.log('disconnect       - Disconnect wallet', 'error');
-                this.log('mine             - Start mining (earn rewards)', 'error');
-                this.log('claim            - Claim your earned rewards', 'error');
-                this.log('faucet           - Get 5 OMEGA (once per day, 2 min global cooldown)', 'error');
-                this.log('balance          - Show wallet and pending balance', 'error');
-                this.log('stop             - Stop all operations', 'error');
-                this.log('status           - Show current mining status', 'error');
-                this.log('stats            - Show mining statistics', 'error');
-                this.log('stress           - Start stress test', 'error');
-                this.log('stopstress       - Stop stress test', 'error');
-                this.log('stressstats      - Show stress test statistics', 'error');
-                this.log('help             - Show this help', 'error');
-                this.log('clear            - Clear terminal', 'error');
-                this.log('Funny Prompts', 'error');
-                this.log('  --->', 'error');
-                this.log('rickroll         - ???', 'error');
-                this.log('fortune          - Get a crypto fortune', 'error');
-                this.log('matrix           - Enter the Matrix', 'error');
-                this.log('hack             - Hack the planet', 'error');
-                this.log('disco            - Disco mode', 'error');
-                this.log('sudo mine        - Sudoers joke', 'error');
-                this.log('  <---', 'error');
+            async showPendingRewards() {
+                this.log(`💰 Pending Rewards: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
+                if (this.totalEarned > 0) {
+                    this.log('💡 Use "claim" command to collect rewards', 'info');
+                }
             }
             
             async depositForMining() {
-                if (!this.signer) {
-                    this.log('Please connect wallet first using "connect" command', 'error');
-                    return;
-                }
-
-                if (!this.contract) {
-                    this.log('Please deploy or connect to mining contract first', 'error');
-                    return;
-                }
-
-                try {
-                    this.log('💰 Depositing OMEGA for mining...', 'info');
-                    this.log('This will fund the mining contract for rewards', 'info');
-                    
-                    // For now, deposit 1 OMEGA (you can make this configurable)
-                    const depositAmount = this.ethers.utils.parseEther('1');
-                    
-                    const tx = await this.contract.depositForMining({ value: depositAmount });
-                    this.log(`📦 Deposit transaction submitted: ${tx.hash}`, 'info');
-                    
-                    await tx.wait();
-                    this.log('✅ Deposit successful! Contract is now funded for mining rewards', 'success');
-                    
-                } catch (error) {
-                    this.log(`❌ Deposit failed: ${error.message}`, 'error');
-                }
+                this.log('💡 This feature is not yet implemented', 'info');
             }
-
+            
             async deployContract() {
-                if (!this.signer) {
-                    this.log('Please connect wallet first using "connect" command', 'error');
-                    return;
-                }
-
-                try {
-                    this.log('🚀 Deploying OmegaMiner contract...', 'info');
-                    this.log('This may take a few moments...', 'info');
-                    
-                    // Contract bytecode and ABI would need to be included
-                    // For now, we'll just show a placeholder
-                    this.log('⚠️ Contract deployment requires compiled bytecode', 'warning');
-                    this.log('Please use the deploy-omega-miner.js script instead', 'info');
-                    
-                } catch (error) {
-                    this.log(`❌ Deployment failed: ${error.message}`, 'error');
-                }
+                this.log('💡 Contract deployment is handled separately', 'info');
             }
-
+            
             async showContractInfo() {
-                if (!this.contract) {
-                    this.log('No mining contract connected', 'error');
-                    return;
-                }
-
-                try {
-                    const address = await this.signer.getAddress();
-                    const [totalMined, lastMineTime, miningStreak, hasMinedWholeBlock, pendingRewards] = 
-                        await this.contract.getMinerInfo(address);
-                    const [totalDeposited, totalRewardsDistributed, contractBalance] = 
-                        await this.contract.getContractStats();
-                    const difficulty = await this.contract.miningDifficulty();
-                    const cooldown = await this.contract.mineCooldown();
-                    const maxReward = await this.contract.maxRewardPerUser();
-
-                    this.log('=== CONTRACT INFORMATION ===', 'info');
-                    this.log(`Contract Address: ${this.contractAddress}`, 'output');
-                    this.log(`Your Total Mined: ${this.ethers.utils.formatEther(totalMined)} OMEGA`, 'output');
-                    this.log(`Pending Rewards: ${this.ethers.utils.formatEther(pendingRewards)} OMEGA`, 'output');
-                    this.log(`Mining Streak: ${miningStreak.toString()}`, 'output');
-                    this.log(`Whole Block Mined: ${hasMinedWholeBlock ? 'YES' : 'NO'}`, hasMinedWholeBlock ? 'success' : 'warning');
-                    this.log(`Last Mine Time: ${lastMineTime.toString() === '0' ? 'Never' : new Date(lastMineTime.toNumber() * 1000).toLocaleString()}`, 'output');
-                    this.log('--- Contract Stats ---', 'info');
-                    this.log(`Total Deposited: ${this.ethers.utils.formatEther(totalDeposited)} OMEGA`, 'output');
-                    this.log(`Total Rewards Distributed: ${this.ethers.utils.formatEther(totalRewardsDistributed)} OMEGA`, 'output');
-                    this.log(`Contract Balance: ${this.ethers.utils.formatEther(contractBalance)} OMEGA`, 'output');
-                    this.log(`Mining Difficulty: ${difficulty.toString()} leading zeros`, 'output');
-                    this.log(`Mine Cooldown: ${cooldown.toString()} seconds`, 'output');
-                    this.log(`Max Reward Per User: ${this.ethers.utils.formatEther(maxReward)} OMEGA`, 'output');
-
-                } catch (error) {
-                    this.log(`❌ Failed to get contract info: ${error.message}`, 'error');
-                }
+                this.log(`📋 Mining Contract: ${this.contractAddress}`, 'info');
+                this.log(`🚰 Faucet Contract: ${this.faucetAddress}`, 'info');
             }
             
             async startStressTest() {
@@ -1490,18 +1319,25 @@
                     this.log('Ethers library not loaded. Please refresh the page.', 'error');
                     return;
                 }
+                
                 if (this.isStressTesting) {
                     this.log('Stress test already running. Use "stopstress" to stop it.', 'warning');
                     return;
                 }
+                
                 // Generate a new wallet for the stress test
                 this.stressWallet = this.ethers.Wallet.createRandom();
                 this.log('🆕 Stress Test Wallet Generated:', 'info');
-                this.log(`Address: ${this.stressWallet.address}`, 'output');
+                this.logHtml(`Address: <span class="copyable" onclick="navigator.clipboard.writeText('${this.stressWallet.address}').then(() => window.terminal.log('✅ Address copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy address', 'error'))">${this.stressWallet.address}</span>`, 'output');
                 this.log(`Private Key: ${this.stressWallet.privateKey}`, 'warning');
                 this.log('[Fund this address with a small amount of OMEGA for gas. Tokens sent here are unrecoverable!]', 'warning');
+                
+                // Add copy functionality
+                this.log('💡 Click the address above to copy it, or type "fund [amount]" to send OMEGA from your connected wallet', 'info');
+                
                 // Connect wallet to provider
                 this.stressWallet = this.stressWallet.connect(this.provider);
+                
                 // Wait for funding
                 this.log('⏳ Waiting for funding to initiate stress test...', 'info');
                 this.isStressTesting = true;
@@ -1512,6 +1348,7 @@
                     failedTxs: 0,
                     startTime: Date.now()
                 };
+                
                 // Poll for funding every 5 seconds
                 this.stressFundingInterval = setInterval(async () => {
                     const balance = await this.provider.getBalance(this.stressWallet.address);
@@ -1540,9 +1377,11 @@
                     const newWallet = this.ethers.Wallet.createRandom();
                     this.stressTestStats.walletsCreated++;
                     const gasPrice = await this.provider.getGasPrice();
+                    
                     // Use and increment local nonce
                     const nonce = this.localNonce;
                     this.localNonce++;
+                    
                     const tx = await this.stressWallet.sendTransaction({
                         to: newWallet.address,
                         value: 0,
@@ -1550,9 +1389,11 @@
                         gasPrice: gasPrice,
                         nonce: nonce
                     });
+                    
                     this.stressTestStats.transactionsSent++;
                     this.log(`📤 Sent empty tx to ${newWallet.address.slice(0, 10)}... (hash: ${tx.hash.slice(0, 10)}...)`, 'info');
                     this.stressTestStats.successfulTxs++;
+                    
                 } catch (err) {
                     this.stressTestStats.failedTxs++;
                     // If nonce error, re-sync local nonce
@@ -1573,8 +1414,14 @@
                     this.log('No stress test running.', 'warning');
                     return;
                 }
-                clearInterval(this.stressTestInterval);
-                clearInterval(this.stressFundingInterval);
+                
+                if (this.stressTestInterval) {
+                    clearInterval(this.stressTestInterval);
+                }
+                if (this.stressFundingInterval) {
+                    clearInterval(this.stressFundingInterval);
+                }
+                
                 this.isStressTesting = false;
                 this.log('🛑 Stress test stopped.', 'warning');
                 this.showStressStats();
@@ -1601,130 +1448,133 @@
                 this.log(`Status: ${this.isStressTesting ? 'RUNNING' : 'STOPPED'}`, this.isStressTesting ? 'success' : 'warning');
             }
             
-            logCommand(command) {
-                const content = document.getElementById('terminalContent');
-                const line = document.createElement('div');
-                line.className = 'terminal-line';
-                line.innerHTML = `<span class="prompt">root@omega-miner:~$</span> <span class="command">${command}</span>`;
-                content.appendChild(line);
-                content.scrollTop = content.scrollHeight;
+            async showMiningStats() {
+                await this.showStats();
             }
             
-            addInputLine() {
-                // This method is no longer needed since input is fixed at the top
-                // The input field is already in the HTML structure
-            }
-            
-            clearTerminal() {
-                const content = document.getElementById('terminalContent');
-                content.innerHTML = '';
-                // Don't add input line since it's fixed at the top
-            }
-            
-            updateConnectionStatus(status) {
-                const statusElement = document.getElementById('connectionStatus');
-                statusElement.textContent = status;
-                statusElement.style.color = status === 'CONNECTED' ? '#ffffff' : '#ff6666';
-            }
-
             async rickroll() {
-                const lyrics = [
-                    "Never gonna give you up",
-                    "Never gonna let you down",
-                    "Never gonna run around and desert you",
-                    "Never gonna make you cry",
-                    "Never gonna say goodbye",
-                    "Never gonna tell a lie and hurt you"
-                ];
-                for (let line of lyrics) {
-                    this.log(line, 'warning');
-                    await new Promise(r => setTimeout(r, 700));
-                }
-                this.log('🎵 You just got Rickrolled! 🎵', 'error');
-                setTimeout(() => {
-                    window.open('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '_blank');
-                }, 2000);
+                this.log('🎵 Never gonna give you up...', 'info');
+                this.log('🎵 Never gonna let you down...', 'info');
+                this.log('🎵 Never gonna run around and desert you...', 'info');
+                this.log('🎵 Never gonna make you cry...', 'info');
+                this.log('🎵 Never gonna say goodbye...', 'info');
+                this.log('🎵 Never gonna tell a lie and hurt you...', 'info');
             }
-
+            
             fortune() {
                 const fortunes = [
-                    "You will HODL through the next dip.",
-                    "A mysterious whale will pump your bags.",
-                    "Beware of rug pulls in the next 24 hours.",
-                    "Your gas fees will be unusually low today.",
-                    "You will find a lost private key.",
-                    "Airdrop season is coming soon!",
-                    "You will be the next block's miner!",
-                    "The next meme coin you buy will 100x... or 0x.",
-                    "You will not get rekt today.",
-                    "A wild Satoshi appears!"
+                    "A beautiful, smart, and loving person will be coming into your life.",
+                    "A dubious friend may be an enemy in camouflage.",
+                    "A faithful friend is a strong defense.",
+                    "A fresh start will put you on your way.",
+                    "A golden egg of opportunity falls into your lap this month.",
+                    "A lifetime friend shall soon be made.",
+                    "A light heart carries you through all the hard times.",
+                    "A new perspective will come with the new year.",
+                    "A pleasant surprise is waiting for you.",
+                    "A short pencil is usually better than a long memory any day."
                 ];
                 const fortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-                this.log('🥠 ' + fortune, 'info');
+                this.log(`🔮 Fortune: ${fortune}`, 'info');
             }
-
+            
             async matrix() {
-                const content = document.getElementById('terminalContent');
-                const original = content.innerHTML;
-                let running = true;
-                let columns = 40;
-                let rows = 12;
-                let chars = 'abcdefghijklmnopqrstuvwxyz0123456789Ω';
-                function randomLine() {
-                    let line = '';
-                    for (let i = 0; i < columns; i++) {
-                        line += `<span style='color:#00ff00;'>${chars[Math.floor(Math.random()*chars.length)]}</span>`;
-                    }
-                    return `<div>${line}</div>`;
+                this.log('🌐 Entering the Matrix...', 'info');
+                for (let i = 0; i < 5; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    this.log('01010101010101010101010101010101', 'output');
                 }
-                content.innerHTML = '';
-                for (let i = 0; i < rows; i++) content.innerHTML += randomLine();
-                let interval = setInterval(() => {
-                    if (!running) return;
-                    content.innerHTML = '';
-                    for (let i = 0; i < rows; i++) content.innerHTML += randomLine();
-                }, 120);
-                await new Promise(r => setTimeout(r, 2500));
-                running = false;
-                clearInterval(interval);
-                content.innerHTML = original;
+                this.log('🌐 Matrix mode activated!', 'success');
             }
-
+            
             async hack() {
-                this.log('Initializing hack.exe...', 'warning');
-                for (let i = 0; i <= 100; i += 10) {
-                    this.log(`Hacking mainframe... [${i}%]`, 'info');
-                    await new Promise(r => setTimeout(r, 120));
-                }
-                this.log('Access denied. Just kidding. Stay safe, miner! 😁', 'error');
+                this.log('💻 Hacker mode activated...', 'info');
+                this.log('🔓 Bypassing security protocols...', 'output');
+                this.log('🔓 Accessing mainframe...', 'output');
+                this.log('🔓 Downloading classified data...', 'output');
+                this.log('✅ Hack complete! You are now a l33t h4x0r!', 'success');
             }
-
+            
             async disco() {
-                const terminal = document.getElementById('terminal');
-                const original = terminal.style.background;
-                const colors = ['#ff00cc', '#00ffff', '#ffff00', '#00ff00', '#ff6600', '#6600ff', '#ff0000'];
-                let i = 0;
-                let running = true;
-                let interval = setInterval(() => {
-                    terminal.style.background = colors[i % colors.length];
-                    i++;
-                }, 150);
-                await new Promise(r => setTimeout(r, 2000));
-                running = false;
-                clearInterval(interval);
-                terminal.style.background = original;
+                this.log('🕺 Disco mode activated!', 'info');
+                this.log('💃 Stayin\' alive, stayin\' alive...', 'output');
+                this.log('🎵 Ah, ha, ha, ha, stayin\' alive, stayin\' alive...', 'output');
+                this.log('✨ Disco fever!', 'success');
+            }
+            
+            sudoMine() {
+                this.log('🔐 Sudo access granted!', 'info');
+                this.log('⚡ Super user mining mode activated!', 'success');
+                this.log('🚀 Mining with admin privileges...', 'output');
+                this.totalEarned += 0.1;
+                this.log('💰 Admin bonus: +0.1 OMEGA', 'success');
             }
 
-            sudoMine() {
-                this.log('You are not in the sudoers file. This incident will be reported.', 'error');
+            async fundStressWallet(amount) {
+                if (!this.signer) {
+                    this.log('Please connect your wallet first using: connect', 'error');
+                    return;
+                }
+                if (!this.stressWallet) {
+                    this.log('No stress test wallet created. Run "stress" first to create a wallet.', 'error');
+                    return;
+                }
+                if (!amount || isNaN(amount) || Number(amount) <= 0) {
+                    this.log('Invalid amount. Usage: fund [amount]', 'error');
+                    return;
+                }
+                try {
+                    this.log(`💰 Funding stress test wallet with ${amount} OMEGA...`, 'info');
+                    const tx = await this.signer.sendTransaction({
+                        to: this.stressWallet.address,
+                        value: this.ethers.utils.parseEther(amount),
+                        gasLimit: 21000
+                    });
+                    this.log(`📤 Funding transaction sent: ${tx.hash}`, 'info');
+                    await tx.wait();
+                    this.log(`✅ Stress test wallet funded with ${amount} OMEGA!`, 'success');
+                    this.log('🚀 Stress test will automatically start once funding is detected...', 'info');
+                } catch (error) {
+                    this.log('❌ Failed to fund stress test wallet: ' + error.message, 'error');
+                }
             }
         }
-        
-        // Initialize terminal when page loads
-        document.addEventListener('DOMContentLoaded', () => {
+    </script>
+    
+    <!-- Initialize the terminal when DOM is ready -->
+    <script>
+        // Ensure the terminal initializes after DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, initializing OmegaMinerTerminal...');
-            window.omegaTerminal = new OmegaMinerTerminal();
+            try {
+                window.terminal = new OmegaMinerTerminal();
+                console.log('OmegaMinerTerminal initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize OmegaMinerTerminal:', error);
+                // Fallback: try to show terminal even if initialization fails
+                const bootAnimation = document.getElementById('bootAnimation');
+                const terminal = document.getElementById('terminal');
+                if (bootAnimation && terminal) {
+                    bootAnimation.style.display = 'none';
+                    terminal.style.display = 'flex';
+                    console.log('Terminal shown with fallback initialization');
+                }
+            }
         });
+        
+        // Additional fallback for immediate execution if DOM is already loaded
+        if (document.readyState === 'loading') {
+            // DOM is still loading, the event listener above will handle it
+        } else {
+            // DOM is already loaded, initialize immediately
+            console.log('DOM already loaded, initializing OmegaMinerTerminal immediately...');
+            try {
+                window.terminal = new OmegaMinerTerminal();
+                console.log('OmegaMinerTerminal initialized successfully (immediate)');
+            } catch (error) {
+                console.error('Failed to initialize OmegaMinerTerminal (immediate):', error);
+            }
+        }
     </script>
 </body>
 </html>

@@ -55,20 +55,23 @@
         }
 
         .theme-toggle {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid #ffffff;
-            color: #ffffff;
-            padding: 8px 12px;
-            border-radius: 5px;
+            width: 22px;
+            height: 22px;
+            background: transparent;
+            border: 2px solid #fff;
+            border-radius: 50%;
             cursor: pointer;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            transition: all 0.3s ease;
+            margin-right: 0;
+            margin-left: 0;
+            display: inline-block;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+            outline: none;
         }
 
         .theme-toggle:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.05);
+            border-color: #99ccff;
+            background: rgba(255,255,255,0.05);
         }
 
         .terminal-input-section {
@@ -464,7 +467,7 @@
         <div class="omega-symbols">Ω Ω Ω Ω Ω</div>
         <div class="pickaxe">⛏️</div>
         <div class="welcome-text">
-            Welcome to Omega Miner v1.0.0<br>
+            Welcome to Omega Terminal v1<br>
             <span style="font-size: 16px; color: #cccccc;">Type below to get started</span>
         </div>
         <div class="loading-dots">Loading...</div>
@@ -472,9 +475,11 @@
 
     <div class="terminal" id="terminal" style="display: none;">
         <div class="terminal-header">
-            <div class="terminal-title">Omega Terminal v1.1.1</div>
-            <div class="terminal-status" id="connectionStatus">DISCONNECTED</div>
-            <button class="theme-toggle">Toggle Theme</button>
+            <div class="terminal-title">Omega Terminal v1.0.2</div>
+            <div style="display: flex; align-items: center; gap: 18px; margin-left: auto;">
+                <button class="theme-toggle" title="Toggle Theme"></button>
+                <div class="terminal-status" id="connectionStatus">DISCONNECTED</div>
+            </div>
         </div>
         
         <div class="terminal-content" id="terminalContent">
@@ -642,7 +647,7 @@
                 
                 // Contract properties
                 this.contractAddress = '0x0d4a5d6d28ce3d79dfd145b3ca5286a50c2f9895'; // Deployed OmegaMiner contract
-                this.faucetAddress = '0x4dcb8bcba1c6c1edbc86b98c7cbab1afd3b6a4f0'; // Deployed OmegaFaucet contract
+                this.faucetAddress = '0xda30bfb82aa9b16b63fa97aafb1bfa7c9101c81b'; // Deployed OmegaFaucet contract
                 this.minerFaucetAddress = '0x1c4ffffcc804ba265f6cfccffb94d0ae28b36207'; // Deployed OmegaMinerFaucet contract
                 this.contractABI = [
                     "function depositForMining() external payable",
@@ -991,8 +996,8 @@
                     themeToggle.addEventListener('click', () => {
                         this.toggleTheme();
                     });
-                    // Set initial button text
-                    themeToggle.textContent = this.isDarkTheme ? '☀️ Light' : '🌙 Dark';
+                    // Remove emoji/text, just hollow circle
+                    themeToggle.textContent = '';
                 }
             }
             
@@ -1308,6 +1313,15 @@
                     
                     this.log(`💰 Claiming ${rewardAmount.toFixed(6)} OMEGA...`, 'info');
                     this.log('⏳ Processing reward transfer...', 'info');
+                    
+                    // Check pending rewards before attempting claim
+                    const minerInfo = await this.contract.getMinerInfo(address);
+                    const pendingRewards = minerInfo[4]; // pendingRewards is the 5th return value
+                    const minClaim = this.ethers.utils.parseEther('0.1');
+                    if (pendingRewards < minClaim) {
+                        this.log('⚠️ Minimum claim amount is 0.1 OMEGA. Keep mining to accumulate more before claiming.', 'warning');
+                        return;
+                    }
                     
                     // Minimal ABI for native faucet
                     const faucetAbi = [
@@ -1751,10 +1765,10 @@
                 
                 if (this.isDarkTheme) {
                     terminal.classList.remove('light-theme');
-                    themeToggle.textContent = '☀️ Light';
+                    themeToggle.textContent = '';
                 } else {
                     terminal.classList.add('light-theme');
-                    themeToggle.textContent = '🌙 Dark';
+                    themeToggle.textContent = '';
                 }
             }
         }

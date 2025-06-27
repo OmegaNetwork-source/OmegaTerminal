@@ -642,7 +642,7 @@
                 
                 // Contract properties
                 this.contractAddress = '0x0d4a5d6d28ce3d79dfd145b3ca5286a50c2f9895'; // Deployed OmegaMiner contract
-                this.faucetAddress = '0xdc7bc9e4c225a2e6b23d3b639f07ed7d4723b896'; // Deployed OmegaFaucet contract
+                this.faucetAddress = '0x4dcb8bcba1c6c1edbc86b98c7cbab1afd3b6a4f0'; // Deployed OmegaFaucet contract
                 this.minerFaucetAddress = '0x1c4ffffcc804ba265f6cfccffb94d0ae28b36207'; // Deployed OmegaMinerFaucet contract
                 this.contractABI = [
                     "function depositForMining() external payable",
@@ -663,27 +663,167 @@
                 this.faucetABI = [
                     {
                         "inputs": [],
-                        "name": "startMining",
+                        "name": "claim",
                         "outputs": [],
                         "stateMutability": "nonpayable",
                         "type": "function"
                     },
                     {
                         "inputs": [],
-                        "name": "claimReward",
-                        "outputs": [{"type": "uint256"}],
+                        "name": "emergencyWithdraw",
+                        "outputs": [],
                         "stateMutability": "nonpayable",
                         "type": "function"
                     },
                     {
-                        "inputs": [{"type": "address"}],
-                        "name": "getMiningSession",
+                        "inputs": [],
+                        "stateMutability": "nonpayable",
+                        "type": "constructor"
+                    },
+                    {
+                        "anonymous": false,
+                        "inputs": [
+                            {
+                                "indexed": false,
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            }
+                        ],
+                        "name": "FaucetRefilled",
+                        "type": "event"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "refillFaucet",
+                        "outputs": [],
+                        "stateMutability": "payable",
+                        "type": "function"
+                    },
+                    {
+                        "anonymous": false,
+                        "inputs": [
+                            {
+                                "indexed": true,
+                                "internalType": "address",
+                                "name": "user",
+                                "type": "address"
+                            },
+                            {
+                                "indexed": false,
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "indexed": false,
+                                "internalType": "uint256",
+                                "name": "timestamp",
+                                "type": "uint256"
+                            }
+                        ],
+                        "name": "TokensClaimed",
+                        "type": "event"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "withdrawFaucet",
+                        "outputs": [],
+                        "stateMutability": "nonpayable",
+                        "type": "function"
+                    },
+                    {
+                        "stateMutability": "payable",
+                        "type": "receive"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "address",
+                                "name": "user",
+                                "type": "address"
+                            }
+                        ],
+                        "name": "canClaim",
                         "outputs": [
-                            {"type": "uint256"},
-                            {"type": "uint256"},
-                            {"type": "uint256"},
-                            {"type": "uint256"},
-                            {"type": "bool"}
+                            {
+                                "internalType": "bool",
+                                "name": "",
+                                "type": "bool"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "CLAIM_AMOUNT",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "CLAIM_COOLDOWN",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "faucetBalance",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "address",
+                                "name": "user",
+                                "type": "address"
+                            }
+                        ],
+                        "name": "getClaimInfo",
+                        "outputs": [
+                            {
+                                "internalType": "bool",
+                                "name": "canClaimNow",
+                                "type": "bool"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "lastClaim",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "timeUntilNextClaim",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "claimAmount",
+                                "type": "uint256"
+                            }
                         ],
                         "stateMutability": "view",
                         "type": "function"
@@ -691,15 +831,65 @@
                     {
                         "inputs": [],
                         "name": "getFaucetBalance",
-                        "outputs": [{"type": "uint256"}],
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "address",
+                                "name": "user",
+                                "type": "address"
+                            }
+                        ],
+                        "name": "getTimeUntilNextClaim",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "address",
+                                "name": "",
+                                "type": "address"
+                            }
+                        ],
+                        "name": "lastClaimTime",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
                         "stateMutability": "view",
                         "type": "function"
                     },
                     {
                         "inputs": [],
-                        "name": "claim",
-                        "outputs": [],
-                        "stateMutability": "nonpayable",
+                        "name": "totalClaims",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
                         "type": "function"
                     }
                 ];
@@ -1208,7 +1398,7 @@
                     const balance = await this.provider.getBalance(address);
                     const omegaBalance = this.ethers.utils.formatEther(balance);
                     
-                    this.log(`�� Wallet Balance: ${omegaBalance} OMEGA`, 'success');
+                    this.log(` Wallet Balance: ${omegaBalance} OMEGA`, 'success');
                     this.log(`📍 Address: ${address}`, 'info');
                     this.log(`💳 Pending Rewards: ${this.totalEarned.toFixed(6)} OMEGA`, 'info');
                 } catch (error) {

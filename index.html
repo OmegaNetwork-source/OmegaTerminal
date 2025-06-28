@@ -999,6 +999,12 @@
                 
                 this.loadTheme();
                 this.init();
+
+                // In the OmegaMinerTerminal class:
+                // 1. Add DM prompt state variables to the constructor
+                this.awaitingDMRecipient = false;
+                this.awaitingDMMessage = false;
+                this.tempDMRecipient = '';
             }
             
             async init() {
@@ -1170,6 +1176,30 @@
             }
             
             async executeCommand(command) {
+                // At the top of executeCommand, before command parsing:
+                if (this.awaitingDMRecipient) {
+                    this.tempDMRecipient = command.trim();
+                    this.awaitingDMRecipient = false;
+                    this.awaitingDMMessage = true;
+                    this.logHtml('<span style="color:#99ccff">Recipient:</span> <span style="color:#fff">' + this.tempDMRecipient + '</span>', 'info');
+                    this.log('Enter your message:', 'info');
+                    return;
+                }
+                if (this.awaitingDMMessage) {
+                    const message = command.trim();
+                    const recipient = this.tempDMRecipient;
+                    this.awaitingDMMessage = false;
+                    this.tempDMRecipient = '';
+                    if (!recipient || !message) {
+                        this.log('Recipient and message required.', 'error');
+                        return;
+                    }
+                    this.logHtml('<span style="color:#99ccff">Message:</span> <span style="color:#fff">' + message + '</span>', 'info');
+                    await this.sendDirectMessage(recipient, message);
+                    this.log('✅ OeMail sent!', 'success');
+                    return;
+                }
+
                 this.logCommand(command);
                 // Hide faucet info box after first command
                 try {
@@ -1558,6 +1588,29 @@
                             this.log('Usage: ens register <name> | ens resolve <name>', 'info');
                         }
                         break;
+                    case 'dm':
+                        if (!args[1]) {
+                            this.log('Usage: dm <recipient> <message>', 'info');
+                            break;
+                        }
+                        if (args.length < 3) {
+                            this.log('Usage: dm <recipient> <message>', 'info');
+                            break;
+                        }
+                        const recipient = args[1];
+                        const dmMessage = args.slice(2).join(' ');
+                        await this.sendDirectMessage(recipient, dmMessage);
+                        break;
+                    case 'inbox':
+                    case 'messages':
+                        await this.showInbox();
+                        break;
+                    case 'oemail':
+                        this.awaitingDMRecipient = true;
+                        this.awaitingDMMessage = false;
+                        this.tempDMRecipient = '';
+                        this.log('Enter recipient (address or ENS):', 'info');
+                        break;
                     default:
                         if (cmd) {
                             this.log(`Command not found: ${command}`, 'error');
@@ -1803,6 +1856,9 @@
                 this.log('rickroll, fortune, matrix, hack, disco, sudo mine', 'info');
                 this.log('clob, v2               - Other features', 'info');
                 this.log('stop                   - Stop mining and stress testing', 'info');
+                this.log('--- Messaging ---', 'output');
+                this.log('oemail                - Start a direct message (DM) flow', 'info');
+                this.log('inbox                 - View your received DMs', 'info');
                 this.log('---', 'output');
                 this.log('Mining wallet is generated in-browser. Fund it from MetaMask, mine, then use [claim] to send rewards directly to your wallet.', 'info');
             }
@@ -2362,6 +2418,141 @@
                     {"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"resolve","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"}
                 ];
                 return new this.ethers.Contract('0xd9ce49734db4f033362d2fd51d52f24cabeb87fa', abi, signerOrProvider || this.signer || this.provider);
+            }
+
+            // Chat functionality
+            async sendDirectMessage(recipient, message) {
+                if (!this.signer) {
+                    this.log('Please connect your wallet first using: connect', 'error');
+                    return;
+                }
+                // Resolve ENS if needed
+                let toAddress = recipient;
+                if (!/^0x[a-fA-F0-9]{40}$/.test(recipient)) {
+                    try {
+                        const ens = this.getENSContract();
+                        const resolved = await ens.resolve(recipient);
+                        if (resolved && resolved !== '0x0000000000000000000000000000000000000000') {
+                            toAddress = resolved;
+                        } else {
+                            this.log('❌ ENS name not found: ' + recipient, 'error');
+                            return;
+                        }
+                    } catch (err) {
+                        this.log('❌ Failed to resolve ENS: ' + err.message, 'error');
+                        return;
+                    }
+                }
+                // Send DM on-chain
+                try {
+                    const dmABI = [
+                        {
+                            "inputs": [
+                                { "internalType": "address", "name": "to", "type": "address" },
+                                { "internalType": "string", "name": "ensName", "type": "string" },
+                                { "internalType": "string", "name": "message", "type": "string" }
+                            ],
+                            "name": "sendMessage",
+                            "outputs": [],
+                            "stateMutability": "nonpayable",
+                            "type": "function"
+                        },
+                        {
+                            "anonymous": false,
+                            "inputs": [
+                                { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+                                { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+                                { "indexed": false, "internalType": "string", "name": "message", "type": "string" },
+                                { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+                            ],
+                            "name": "DirectMessage",
+                            "type": "event"
+                        }
+                    ];
+                    const dmContract = new this.ethers.Contract('0x26e31516e5e7790f8aaa35278735970a93fee213', dmABI, this.signer);
+                    let tx;
+                    if (/^0x[a-fA-F0-9]{40}$/.test(recipient)) {
+                        // It's an address
+                        tx = await dmContract.sendMessage(recipient, '', message);
+                    } else {
+                        // It's an ENS name
+                        tx = await dmContract.sendMessage('0x0000000000000000000000000000000000000000', recipient, message);
+                    }
+                    this.log('⏳ Sending DM on-chain... (tx: ' + tx.hash + ')', 'info');
+                    await tx.wait();
+                    this.log('✅ Direct message sent!', 'success');
+                } catch (err) {
+                    this.log('❌ Failed to send DM: ' + err.message, 'error');
+                }
+            }
+
+            async showInbox() {
+                try {
+                    const dmABI = [
+                        {
+                            "inputs": [
+                                { "internalType": "address", "name": "to", "type": "address" },
+                                { "internalType": "string", "name": "ensName", "type": "string" },
+                                { "internalType": "string", "name": "message", "type": "string" }
+                            ],
+                            "name": "sendMessage",
+                            "outputs": [],
+                            "stateMutability": "nonpayable",
+                            "type": "function"
+                        },
+                        {
+                            "anonymous": false,
+                            "inputs": [
+                                { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+                                { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+                                { "indexed": false, "internalType": "string", "name": "message", "type": "string" },
+                                { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+                            ],
+                            "name": "DirectMessage",
+                            "type": "event"
+                        }
+                    ];
+                    const dmContract = new this.ethers.Contract('0x26e31516e5e7790f8aaa35278735970a93fee213', dmABI, this.provider);
+                    const myAddr = await this.signer.getAddress();
+                    const filter = dmContract.filters.DirectMessage(null, myAddr);
+                    const events = await dmContract.queryFilter(filter, -10000); // last 10k blocks
+                    if (!events.length) {
+                        this.log('No direct messages found.', 'info');
+                        return;
+                    }
+                    this.log('=== Inbox ===', 'info');
+                    // Show last 10 messages
+                    for (let i = 0; i < events.slice(-10).length; i++) {
+                        const ev = events.slice(-10)[i];
+                        let from = ev.args.from;
+                        let ensName = '';
+                        try {
+                            const ens = this.getENSContract();
+                            ensName = await ens.reverse(from);
+                        } catch {}
+                        const time = new Date(Number(ev.args.timestamp) * 1000).toISOString().replace('T', ' ').replace('Z', ' UTC');
+                        const msgId = 'msg_' + i + '_' + ev.transactionHash;
+                        this.log('──────────────────────────────', 'output');
+                        this.logHtml(`<span id="${msgId}"><span style="color:#fff">📧</span> <span style="color:#99ccff">From:</span> <span style="color:#fff">${ensName ? ensName + ' ' : ''}(${from})</span><br><span style="color:#99ccff">Time:</span> <span style="color:#fff">${time}</span><br><span style="color:#99ccff">Message:</span> <span style="color:#fff">${ev.args.message}</span><br><span style="color:#00ff99;cursor:pointer;text-decoration:underline;" onclick="document.getElementById('${msgId}').style.display='none'">Delete</span> | <span style="color:#00ccff;cursor:pointer;text-decoration:underline;" onclick="window.terminal.prefillOeMailRecipient('${from}')">Reply</span></span>`, 'output');
+                    }
+                    this.log('Fetching inbox events...', 'info');
+                    console.log('DM events:', events);
+                } catch (err) {
+                    this.log('❌ Failed to fetch inbox: ' + err.message, 'error');
+                }
+            }
+
+            prefillOeMailRecipient(address) {
+                const input = document.getElementById('commandInput');
+                if (input) {
+                    window.terminal.tempDMRecipient = address;
+                    window.terminal.awaitingDMRecipient = false;
+                    window.terminal.awaitingDMMessage = true;
+                    window.terminal.logHtml('<span style="color:#99ccff">Recipient:</span> <span style="color:#fff">' + address + '</span>', 'info');
+                    window.terminal.log('Enter your message:', 'info');
+                    input.value = '';
+                    input.focus();
+                }
             }
         }
     </script>

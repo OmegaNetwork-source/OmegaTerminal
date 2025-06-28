@@ -1038,6 +1038,9 @@
                         // Apply theme after terminal is shown
                         this.applyTheme();
                         
+                        // Show unified help
+                        this.showUnifiedHelp();
+                        
                         console.log('Terminal ready!');
                         resolve();
                     }, 3000); // Show animation for 3 seconds
@@ -1498,6 +1501,63 @@
                     case 'stop':
                         this.stopAll();
                         break;
+                    case 'ens':
+                        if (!args[1]) {
+                            this.log('Usage: ens register <name> | ens resolve <name>', 'info');
+                            break;
+                        }
+                        if (args[1] === 'register' && args[2]) {
+                            if (!this.signer) {
+                                this.log('Please connect your wallet first using: connect', 'error');
+                                break;
+                            }
+                            const name = args[2];
+                            this.log(`Registering ENS name: ${name}...`, 'info');
+                            try {
+                                const ens = this.getENSContract(this.signer);
+                                const tx = await ens.register(name);
+                                this.log(`✅ Registration transaction sent: ${tx.hash}`, 'success');
+                                this.log('Waiting for confirmation...', 'info');
+                                await tx.wait();
+                                this.log(`✅ Name registered: ${name}`, 'success');
+                            } catch (err) {
+                                this.log(`❌ Registration failed: ${err.message}`, 'error');
+                            }
+                            break;
+                        } else if (args[1] === 'resolve' && args[2]) {
+                            const name = args[2];
+                            this.log(`Resolving ENS name: ${name}...`, 'info');
+                            try {
+                                const ens = this.getENSContract();
+                                const address = await ens.resolve(name);
+                                if (address && address !== '0x0000000000000000000000000000000000000000') {
+                                    this.logHtml(`✅ <b>${name}</b> resolves to <span class="copyable" onclick="navigator.clipboard.writeText('${address}').then(() => window.terminal.log('✅ Address copied!', 'success'))">${address}</span>`, 'success');
+                                } else {
+                                    this.log(`❌ Name not found: ${name}`, 'error');
+                                }
+                            } catch (err) {
+                                this.log(`❌ Resolve failed: ${err.message}`, 'error');
+                            }
+                            break;
+                        } else if (args[1] === 'search' && args[2]) {
+                            const name = args[2];
+                            this.log(`Searching for ENS name: ${name}...`, 'info');
+                            try {
+                                const ens = this.getENSContract();
+                                const address = await ens.resolve(name);
+                                if (address && address !== '0x0000000000000000000000000000000000000000') {
+                                    this.logHtml(`✅ <b>${name}</b> is owned by <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('${address}').then(() => window.terminal.log('✅ Address copied!', 'success'))\">${address}</span>`, 'success');
+                                } else {
+                                    this.log(`❌ Name not found: ${name}`, 'error');
+                                }
+                            } catch (err) {
+                                this.log(`❌ ENS search failed: ${err.message}`, 'error');
+                            }
+                            break;
+                        } else {
+                            this.log('Usage: ens register <name> | ens resolve <name>', 'info');
+                        }
+                        break;
                     default:
                         if (cmd) {
                             this.log(`Command not found: ${command}`, 'error');
@@ -1709,23 +1769,46 @@
                 }
             }
             
-            showHelp() {
-                this.log('=== Available Commands ===', 'info');
-                this.log('Connect:      [connect] | Disconnect: [disconnect]', 'output');
-                this.log('Theme:        [theme dark] [theme light] [theme matrix] [theme retro]', 'output');
-                this.log('Mine:         [mine] - Start mining with a funded mining wallet', 'output');
-                this.log('Faucet:       [faucet] | Balance: [balance]', 'output');
-                this.log('Status:       [status] | Stats: [stats]', 'output');
-                this.log('Send:         [send <address> <amount>]', 'output');
-                this.log('Stress Test:  [stress] | Stop Stress: [stopstress] | Stress Stats: [stressstats]', 'output');
-                this.log('Clear:        [clear] | Help: [help]', 'output');
-                this.log('Fun:          [rickroll] [fortune] [matrix] [hack] [disco] [sudo mine]', 'output');
+            async showUnifiedHelp() {
+                this.log('=== Omega Terminal Commands ===', 'info');
+                this.log('--- Wallet ---', 'output');
+                this.log('connect                - Connect your wallet', 'info');
+                this.log('disconnect             - Disconnect your wallet', 'info');
+                this.log('balance                - Show wallet balance', 'info');
+                this.log('--- Mining ---', 'output');
+                this.log('mine                   - Start mining', 'info');
+                this.log('claim                  - Claim mining rewards', 'info');
+                this.log('status                 - Show mining status', 'info');
+                this.log('stats                  - Show mining stats', 'info');
+                this.log('--- Sending & ENS ---', 'output');
+                this.log('send <to> <amount>     - Send OMEGA to address or ENS name', 'info');
+                this.log('ens register <name>    - Register an ENS name', 'info');
+                this.log('ens resolve <name>     - Resolve an ENS name to an address', 'info');
+                this.log('ens search <name>      - Search for an ENS name and show owner', 'info');
+                this.log('--- Mixer (Privacy) ---', 'output');
+                this.log('mixer deposit          - Generate secret/commitment for deposit', 'info');
+                this.log('mixer deposit-execute  - Generate and deposit via MetaMask', 'info');
+                this.log('mixer deposit-direct   - Generate and deposit with private key', 'info');
+                this.log('mixer withdraw         - Prepare withdrawal', 'info');
+                this.log('mixer withdraw-direct  - Withdraw with private key', 'info');
+                this.log('mixer -help            - Mixer usage help', 'info');
+                this.log('--- Stress Test ---', 'output');
+                this.log('stress                 - Start stress test', 'info');
+                this.log('stopstress             - Stop stress test', 'info');
+                this.log('stressstats            - Show stress test stats', 'info');
+                this.log('--- Fun & Misc ---', 'output');
+                this.log('theme <name>           - Switch theme (dark, light, matrix, retro)', 'info');
+                this.log('clear                  - Clear the terminal', 'info');
+                this.log('help                   - Show this help message', 'info');
+                this.log('rickroll, fortune, matrix, hack, disco, sudo mine', 'info');
+                this.log('clob, v2               - Other features', 'info');
+                this.log('stop                   - Stop mining and stress testing', 'info');
                 this.log('---', 'output');
                 this.log('Mining wallet is generated in-browser. Fund it from MetaMask, mine, then use [claim] to send rewards directly to your wallet.', 'info');
-                this.log('CLOB: [clob]', 'output');
-                this.log('V2: [v2]', 'output');
-                this.log('Mixer: [mixer deposit] | [mixer deposit-execute] | [mixer deposit-direct] | [mixer withdraw] | [mixer withdraw-direct] | [mixer -help]', 'output');
             }
+            
+            // Replace old showHelp with unified version
+            showHelp() { this.showUnifiedHelp(); }
             
             async showBalance() {
                 if (!this.signer) {
@@ -1914,25 +1997,34 @@
                     const newWallet = this.ethers.Wallet.createRandom();
                     this.stressTestStats.walletsCreated++;
                     const gasPrice = await this.provider.getGasPrice();
-                    
+
+                    // Log stress wallet address and balance before sending
+                    const stressAddress = this.stressWallet.address;
+                    const balance = await this.provider.getBalance(stressAddress);
+                    this.log(`[DEBUG] Stress wallet: ${stressAddress}, Balance: ${this.ethers.utils.formatEther(balance)} OMEGA`, 'info');
+                    this.log(`[DEBUG] Provider: ${this.provider.connection && this.provider.connection.url ? this.provider.connection.url : 'unknown'}`, 'info');
+
                     // Use and increment local nonce
                     const nonce = this.localNonce;
                     this.localNonce++;
-                    
-                    const tx = await this.stressWallet.sendTransaction({
+
+                    const txObj = {
                         to: newWallet.address,
                         value: 0,
                         gasLimit: 21000,
                         gasPrice: gasPrice,
                         nonce: nonce
-                    });
-                    
+                    };
+                    this.log(`[DEBUG] Sending tx: ${JSON.stringify(txObj)}`, 'info');
+
+                    const tx = await this.stressWallet.sendTransaction(txObj);
+
                     this.stressTestStats.transactionsSent++;
-                    this.log(`📤 Sent empty tx to ${newWallet.address.slice(0, 10)}... (hash: ${tx.hash.slice(0, 10)}...)`, 'info');
+                    this.log(`📤 Sent empty tx to ${newWallet.address.slice(0, 10)}... (hash: ${tx.hash})`, 'info');
                     this.stressTestStats.successfulTxs++;
-                    
                 } catch (err) {
                     this.stressTestStats.failedTxs++;
+                    this.log(`[DEBUG] Error: ${err && err.stack ? err.stack : err}`, 'error');
                     // If nonce error, re-sync local nonce
                     if (err.message && (err.message.includes('nonce') || err.message.includes('replacement'))) {
                         this.log('🔄 Nonce error detected, re-syncing nonce from network...', 'warning');
@@ -2159,18 +2251,40 @@
                     this.log('Please connect your wallet first using: connect', 'error');
                     return;
                 }
-                // Parse command: send <address> <amount>
+                // Parse command: send <address_or_ens> <amount>
                 const parts = command.trim().split(/\s+/);
                 if (parts.length !== 3) {
-                    this.log('Usage: send <address> <amount>', 'warning');
+                    this.log('Usage: send <address_or_ens> <amount>', 'warning');
                     return;
                 }
-                const address = parts[1];
+                let address = parts[1];
                 const amountStr = parts[2];
+                
+                // First, try to resolve as ENS name if it's not a valid address
+                if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+                    this.log(`🔍 Resolving ENS name: ${address}...`, 'info');
+                    try {
+                        const ens = this.getENSContract();
+                        const resolvedAddress = await ens.resolve(address);
+                        if (resolvedAddress && resolvedAddress !== '0x0000000000000000000000000000000000000000') {
+                            this.log(`✅ Resolved ${address} to ${resolvedAddress}`, 'success');
+                            address = resolvedAddress;
+                        } else {
+                            this.log(`❌ ENS name not found: ${address}`, 'error');
+                            return;
+                        }
+                    } catch (err) {
+                        this.log(`❌ Failed to resolve ENS name: ${err.message}`, 'error');
+                        return;
+                    }
+                }
+                
+                // Now validate the resolved address
                 if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
                     this.log('Invalid address format.', 'error');
                     return;
                 }
+                
                 let amount;
                 try {
                     amount = this.ethers.utils.parseEther(amountStr);
@@ -2178,6 +2292,7 @@
                     this.log('Invalid amount.', 'error');
                     return;
                 }
+                
                 this.log(`🚀 Sending ${amountStr} OMEGA to ${address}...`, 'info');
                 try {
                     const tx = await this.signer.sendTransaction({
@@ -2235,6 +2350,18 @@
                 } catch (error) {
                     this.log(`❌ Claim failed: ${error.message}`, 'error');
                 }
+            }
+
+            // 1. Add ENS contract setup at the top of the class (after constructor or as a helper):
+            getENSContract(signerOrProvider) {
+                const abi = [
+                    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"name","type":"string"},{"indexed":true,"internalType":"address","name":"owner","type":"address"}],"name":"NameRegistered","type":"event"},
+                    {"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"register","outputs":[],"stateMutability":"nonpayable","type":"function"},
+                    {"inputs":[{"internalType":"string","name":"name","type":"string"},{"internalType":"address","name":"newOwner","type":"address"}],"name":"transfer","outputs":[],"stateMutability":"nonpayable","type":"function"},
+                    {"inputs":[{"internalType":"string","name":"","type":"string"}],"name":"names","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+                    {"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"resolve","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"}
+                ];
+                return new this.ethers.Contract('0xd9ce49734db4f033362d2fd51d52f24cabeb87fa', abi, signerOrProvider || this.signer || this.provider);
             }
         }
     </script>

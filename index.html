@@ -1167,6 +1167,7 @@
             }
             
             async executeCommand(command) {
+                this.logCommand(command);
                 // Hide faucet info box after first command
                 try {
                     const infoBox = document.getElementById('faucetInfoBox');
@@ -1176,64 +1177,200 @@
                 } catch (e) {}
                 const args = command.trim().split(/\s+/);
                 const cmd = args[0].toLowerCase();
-                this.logCommand(command);
-                // Handle continue mining response
-                if (this.waitingForContinueResponse) {
-                    this.waitingForContinueResponse = false;
-                    if (cmd === 'yes' || cmd === 'y') {
-                        this.log('✅ Continuing mining...', 'success');
-                        await this.startMiningStressTest();
-                        return;
-                    } else {
-                        this.log('👋 Mining session ended. Thanks for mining!', 'info');
-                        return;
+
+                // --- Handle awaiting input states before command parsing ---
+                if (this.awaitingMixerDirectInput && args.length === 2) {
+                    this.awaitingMixerDirectInput = false;
+                    const privateKeyInput = args[0];
+                    const amountStr = args[1];
+                    try {
+                        const mixerABI = [
+                            "function deposit(bytes32 commitment) external payable"
+                        ];
+                        // Always use a JsonRpcProvider for direct private key flows
+                        const OMEGA_RPC_URL = 'https://0x4e454228.rpc.aurora-cloud.dev';
+                        const provider = new this.ethers.providers.JsonRpcProvider(OMEGA_RPC_URL);
+                        const privateKey = privateKeyInput.startsWith('0x') ? privateKeyInput : '0x' + privateKeyInput;
+                        const wallet = new this.ethers.Wallet(privateKey, provider);
+                        // Debug: print wallet address
+                        this.log(`Using wallet address: ${wallet.address}`, 'info');
+                        // Debug: print provider network
+                        const network = await provider.getNetwork();
+                        this.log(`Provider network: ${network.name} (chainId: ${network.chainId})`, 'info');
+                        // Debug: print wallet balance
+                        const balance = await wallet.getBalance();
+                        this.log(`Wallet balance: ${this.ethers.utils.formatEther(balance)} OMEGA`, 'info');
+                        const mixerContract = new this.ethers.Contract('0xc57824b37a7fc769871075103c4dd807bfb3fd3e', mixerABI, wallet);
+                        const depositAmount = this.ethers.utils.parseEther(amountStr);
+                        const array = window.crypto.getRandomValues(new Uint8Array(32));
+                        const secret = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+                        const commitment = this.ethers.utils.keccak256('0x' + secret);
+                        this.logHtml(`1. Generated secret: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('${secret}').then(() => window.terminal.log('✅ Secret copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy secret', 'error'))\">${secret}</span>`, 'info');
+                        this.log(`2. Commitment: ${commitment}`, 'info');
+                        this.log(`3. Deposit amount: ${amountStr} OMEGA`, 'info');
+                        this.log('4. Creating wallet and calling contract...', 'info');
+                        const tx = await mixerContract.deposit(commitment, { value: depositAmount });
+                        this.log(`✅ Deposit transaction submitted! Hash: ${tx.hash}`, 'success');
+                        this.log('Waiting for confirmation...', 'info');
+                        try {
+                            const receipt = await tx.wait();
+                            this.log(`✅ Deposit confirmed! Block: ${receipt.blockNumber}`, 'success');
+                            this.log('Your funds are now in the mixer. Use your secret to withdraw later.', 'info');
+                        } catch (err) {
+                            this.log('⚠️ Transaction was submitted but confirmation could not be detected in time.', 'warning');
+                            this.log('You can check the status manually on the block explorer:', 'info');
+                            this.logHtml(`<a href=\"https://0x4e454228.explorer.aurora-cloud.dev/tx/${tx.hash}\" target=\"_blank\">${tx.hash}</a>`, 'info');
+                        }
+                    } catch (error) {
+                        this.log(`❌ Deposit failed: ${error.message}`, 'error');
+                        this.log('Make sure you have enough OMEGA and a valid private key.', 'info');
                     }
+                    return;
                 }
+                if (this.awaitingMixerDirectAmount && args.length === 1) {
+                    this.awaitingMixerDirectAmount = false;
+                    const amountStr = args[0];
+                    try {
+                        // Mixer contract ABI (updated for new contract)
+                        const mixerABI = [
+                            "function deposit(bytes32 commitment) external payable"
+                        ];
+                        const privateKey = this.storedPrivateKey.startsWith('0x') ? this.storedPrivateKey : '0x' + this.storedPrivateKey;
+                        const wallet = new this.ethers.Wallet(privateKey, this.provider);
+                        const mixerContract = new this.ethers.Contract('0xc57824b37a7fc769871075103c4dd807bfb3fd3e', mixerABI, wallet);
+                        const depositAmount = this.ethers.utils.parseEther(amountStr);
+                        // Generate secret and commitment
+                        const array = window.crypto.getRandomValues(new Uint8Array(32));
+                        const secret = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+                        const commitment = this.ethers.utils.keccak256('0x' + secret);
+                        this.logHtml(`1. Generated secret: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('${secret}').then(() => window.terminal.log('✅ Secret copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy secret', 'error'))\">${secret}</span>`, 'info');
+                        this.log(`2. Commitment: ${commitment}`, 'info');
+                        this.log(`3. Deposit amount: ${amountStr} OMEGA`, 'info');
+                        this.log('4. Creating wallet and calling contract...', 'info');
+                        const tx = await mixerContract.deposit(commitment, { value: depositAmount });
+                        this.log(`✅ Deposit transaction submitted! Hash: ${tx.hash}`, 'success');
+                        this.log('Waiting for confirmation...', 'info');
+                        try {
+                            const receipt = await tx.wait();
+                            this.log(`✅ Deposit confirmed! Block: ${receipt.blockNumber}`, 'success');
+                            this.log('Your funds are now in the mixer. Use your secret to withdraw later.', 'info');
+                        } catch (err) {
+                            this.log('⚠️ Transaction was submitted but confirmation could not be detected in time.', 'warning');
+                            this.log('You can check the status manually on the block explorer:', 'info');
+                            this.logHtml(`<a href=\"https://0x4e454228.explorer.aurora-cloud.dev/tx/${tx.hash}\" target=\"_blank\">${tx.hash}</a>`, 'info');
+                        }
+                        // Clear stored private key
+                        this.storedPrivateKey = null;
+                    } catch (error) {
+                        this.log(`❌ Deposit failed: ${error.message}`, 'error');
+                        this.log('Make sure you have enough OMEGA and a valid private key.', 'info');
+                        this.storedPrivateKey = null;
+                    }
+                    return;
+                }
+                if (this.awaitingPrivateKey && this.awaitingMixerWithdrawDirect && args.length === 1) {
+                    // Withdraw-direct: received private key
+                    this.awaitingPrivateKey = false;
+                    this.awaitingMixerWithdrawDirect = false;
+                    this.storedPrivateKey = args[0];
+                    this.log('Now enter your secret and withdrawal address separated by a space:', 'info');
+                    this.awaitingMixerWithdrawDirectParams = true;
+                    return;
+                }
+                if (this.awaitingMixerWithdrawDirectParams && args.length === 2) {
+                    // Withdraw-direct: received secret and address
+                    this.awaitingMixerWithdrawDirectParams = false;
+                    try {
+                        this.log('=== Omega Mixer Withdraw (Direct) ===', 'info');
+                        this.log('Withdrawing funds directly from contract...', 'info');
+                        // Validate secret
+                        let secretHex = args[0];
+                        if (!secretHex.startsWith('0x')) secretHex = '0x' + secretHex;
+                        if (secretHex.length !== 66) { // 2 for '0x' + 64 hex chars
+                            this.log('❌ Secret must be 32 bytes (64 hex characters).', 'error');
+                            this.storedPrivateKey = null;
+                            return;
+                        }
+                        // Create wallet from private key (stored from previous step)
+                        const privateKey = this.storedPrivateKey.startsWith('0x') ? this.storedPrivateKey : '0x' + this.storedPrivateKey;
+                        const wallet = new this.ethers.Wallet(privateKey, this.provider);
+                        // Mixer contract ABI
+                        const mixerABI = [
+                            "function withdraw(bytes32 secret, address to) external"
+                        ];
+                        const mixerContract = new this.ethers.Contract('0xc57824b37a7fc769871075103c4dd807bfb3fd3e', mixerABI, wallet);
+                        const tx = await mixerContract.withdraw(secretHex, args[1]);
+                        this.log(`✅ Withdrawal transaction submitted! Hash: ${tx.hash}`, 'success');
+                        this.log('Waiting for confirmation...', 'info');
+                        const receipt = await tx.wait();
+                        this.log(`✅ Withdrawal confirmed! Block: ${receipt.blockNumber}`, 'success');
+                        this.log(`✅ Funds withdrawn to: ${args[1]}`, 'success');
+                        // Clear stored private key
+                        this.storedPrivateKey = null;
+                    } catch (error) {
+                        this.log(`❌ Withdrawal failed: ${error.message}`, 'error');
+                        this.log('Make sure you have a valid private key and the secret is correct.', 'info');
+                        this.storedPrivateKey = null;
+                    }
+                    return;
+                }
+                // --- End awaiting input checks ---
+
+                // --- Handle command parsing ---
                 switch (cmd) {
                     case 'connect':
-                        await this.connectWallet();
+                        this.connectWallet();
                         break;
                     case 'disconnect':
-                        await this.disconnectWallet();
+                        this.disconnectWallet();
+                        break;
+                    case 'theme':
+                        this.setTheme(args[1]);
                         break;
                     case 'mine':
-                        await this.mine();
-                        break;
-                    case 'session':
-                        await this.startMiningSession();
+                        this.mine();
                         break;
                     case 'faucet':
-                        await this.faucetClaim();
-                        break;
-                    case 'claim':
-                        await this.claim();
-                        break;
-                    case 'pending':
-                        await this.showPendingRewards();
-                        break;
-                    case 'balance':
-                        await this.showBalance();
-                        break;
-                    case 'stop':
-                        this.stopAll();
+                        this.faucetClaim();
                         break;
                     case 'status':
-                        await this.showStatus();
+                        this.showStatus();
                         break;
                     case 'stats':
-                        await this.showStats();
+                        this.showStats();
                         break;
-                    case 'deposit':
-                        await this.depositForMining();
+                    case 'send':
+                        this.sendOmega(command);
                         break;
-                    case 'deploy':
-                        await this.deployContract();
+                    case 'clear':
+                        this.clearTerminal();
                         break;
-                    case 'contract':
-                        await this.showContractInfo();
+                    case 'help':
+                        this.showHelp();
+                        break;
+                    case 'rickroll':
+                        this.rickroll();
+                        break;
+                    case 'fortune':
+                        this.fortune();
+                        break;
+                    case 'matrix':
+                        this.matrix();
+                        break;
+                    case 'hack':
+                        this.hack();
+                        break;
+                    case 'disco':
+                        this.disco();
+                        break;
+                    case 'sudo':
+                        this.sudoMine();
+                        break;
+                    case 'fund':
+                        this.fundMiningWallet(args[1]);
                         break;
                     case 'stress':
-                        await this.startStressTest();
+                        this.startStressTest();
                         break;
                     case 'stopstress':
                         this.stopStressTest();
@@ -1241,66 +1378,125 @@
                     case 'stressstats':
                         this.showStressStats();
                         break;
-                    case 'theme':
-                        if (args.length >= 2) {
-                            await this.setTheme(args[1]);
-                        } else {
-                            this.toggleTheme();
+                    case 'mixer':
+                        if (args[1] === '-help') {
+                            this.log('=== Omega Mixer Help ===', 'info');
+                            this.log('The Omega Mixer allows you to privately send OMEGA tokens by breaking the on-chain link between sender and receiver.', 'info');
+                            this.log('How it works:', 'info');
+                            this.log('1. Use "mixer deposit" to generate a secret and commitment, then manually call the contract.', 'info');
+                            this.log('2. Use "mixer deposit-execute" to generate secret and call contract via MetaMask.', 'info');
+                            this.log('3. Use "mixer deposit-direct" to generate secret and call contract directly (requires private key).', 'info');
+                            this.log('4. Wait for the mixing round to complete (more users = more privacy).', 'info');
+                            this.log('5. Use "mixer withdraw" to prepare your withdrawal. Enter your secret and the new address you want to receive funds at.', 'info');
+                            this.log('6. In MetaMask (or via a relayer), call the withdraw function on the mixer contract with your secret and new address.', 'info');
+                            this.log('7. For maximum privacy, use a relayer to submit the withdrawal transaction.', 'info');
+                            this.log('NEVER share your secret. Anyone with the secret can withdraw your funds!', 'warning');
+                            this.log('WARNING: Using deposit-direct requires entering your private key. Use at your own risk!', 'warning');
+                        } else if (args[1] === 'deposit') {
+                            // Generate secret and commitment
+                            const array = window.crypto.getRandomValues(new Uint8Array(32));
+                            const secret = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+                            const commitment = this.ethers.utils.keccak256('0x' + secret);
+                            this.log('=== Omega Mixer Deposit ===', 'info');
+                            this.logHtml(`1. Save this secret for withdrawal: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('${secret}').then(() => window.terminal.log('✅ Secret copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy secret', 'error'))\">${secret}</span>`, 'info');
+                            this.log(`2. Commitment (for deposit): ${commitment}`, 'info');
+                            this.log(`3. In MetaMask, interact with the mixer contract:`, 'info');
+                            this.logHtml(`   Contract: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('0xc57824b37a7fc769871075103c4dd807bfb3fd3e').then(() => window.terminal.log('✅ Address copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy address', 'error'))\">0xc57824b37a7fc769871075103c4dd807bfb3fd3e</span>`, 'info');
+                            this.log(`   IMPORTANT: Do NOT send a plain transaction to this address!`, 'warning');
+                            this.log(`   Instead, call the deposit function:`, 'info');
+                            this.log(`   - Go to the contract in MetaMask`, 'info');
+                            this.log(`   - Click "Write Contract"`, 'info');
+                            this.log(`   - Find the "deposit" function`, 'info');
+                            this.log(`   - Enter commitment: ${commitment}`, 'info');
+                            this.log(`   - Set value to your desired OMEGA amount`, 'info');
+                            this.log(`   - Submit the transaction`, 'info');
+                            this.log('4. After mixing, use your secret to withdraw to a new address.', 'info');
+                        } else if (args[1] === 'deposit-execute') {
+                            // Generate secret and commitment, then prompt for amount
+                            const array = window.crypto.getRandomValues(new Uint8Array(32));
+                            const secret = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+                            const commitment = this.ethers.utils.keccak256('0x' + secret);
+                            this.storedMixerSecret = secret;
+                            this.storedMixerCommitment = commitment;
+                            this.awaitingMixerExecuteAmount = true;
+                            this.log('=== Omega Mixer Deposit (Auto-Execute) ===', 'info');
+                            this.logHtml(`1. Generated secret: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText('${secret}').then(() => window.terminal.log('✅ Secret copied to clipboard!', 'success')).catch(() => window.terminal.log('❌ Failed to copy secret', 'error'))\">${secret}</span>`, 'info');
+                            this.log(`2. Commitment: ${commitment}`, 'info');
+                            this.log('3. Enter deposit amount in OMEGA (e.g. 0.1):', 'info');
+                            return;
                         }
-                        break;
-                    case 'help':
-                        this.showHelp();
-                        break;
-                    case 'clear':
-                        this.clearTerminal();
-                        break;
-                    case 'rickroll':
-                        await this.rickroll();
-                        break;
-                    case 'fortune':
-                        this.fortune();
-                        break;
-                    case 'matrix':
-                        await this.matrix();
-                        break;
-                    case 'hack':
-                        await this.hack();
-                        break;
-                    case 'disco':
-                        await this.disco();
-                        break;
-                    case 'sudo mine':
-                        this.sudoMine();
-                        break;
-                    case 'minestats':
-                        await this.showMiningStats();
-                        break;
-                    case 'send':
-                        await this.sendOmega(command);
-                        break;
-                    case 'fund':
-                        if (args.length >= 2) {
-                            if (this.isStressTesting && this.stressWallet) {
-                                await this.fundStressWallet(args[1]);
-                            } else {
-                                await this.fundMiningWallet(args[1]);
+                        // Add handler for awaitingMixerExecuteAmount
+                        if (this.awaitingMixerExecuteAmount && args.length === 1) {
+                            this.awaitingMixerExecuteAmount = false;
+                            const amountStr = args[0];
+                            try {
+                                const mixerABI = [
+                                    "function deposit(bytes32 commitment) external payable"
+                                ];
+                                const mixerContract = new this.ethers.Contract('0xc57824b37a7fc769871075103c4dd807bfb3fd3e', mixerABI, this.provider.getSigner());
+                                const depositAmount = this.ethers.utils.parseEther(amountStr);
+                                const commitment = this.storedMixerCommitment;
+                                const tx = await mixerContract.deposit(commitment, { value: depositAmount });
+                                this.log(`✅ Deposit transaction submitted! Hash: ${tx.hash}`, 'success');
+                                this.log('Waiting for confirmation...', 'info');
+                                try {
+                                    const receipt = await tx.wait();
+                                    this.log(`✅ Deposit confirmed! Block: ${receipt.blockNumber}`, 'success');
+                                    this.log('Your funds are now in the mixer. Use your secret to withdraw later.', 'info');
+                                } catch (err) {
+                                    this.log('⚠️ Transaction was submitted but confirmation could not be detected in time.', 'warning');
+                                    this.log('You can check the status manually on the block explorer:', 'info');
+                                    this.logHtml(`<a href=\"https://0x4e454228.explorer.aurora-cloud.dev/tx/${tx.hash}\" target=\"_blank\">${tx.hash}</a>`, 'info');
+                                }
+                                // Clear stored secret/commitment
+                                this.storedMixerSecret = null;
+                                this.storedMixerCommitment = null;
+                            } catch (error) {
+                                this.log(`❌ Deposit failed: ${error.message}`, 'error');
+                                this.log('Make sure you have enough OMEGA in your wallet.', 'info');
+                                this.storedMixerSecret = null;
+                                this.storedMixerCommitment = null;
                             }
+                            return;
+                        }
+                        else if (args[1] === 'deposit-direct') {
+                            this.log('=== Omega Mixer Deposit (Direct) ===', 'warning');
+                            this.log('WARNING: This will require your private key. Use at your own risk!', 'warning');
+                            this.log('Enter your private key and deposit amount separated by a space (e.g. <privatekey> 0.1):', 'info');
+                            this.awaitingMixerDirectInput = true;
+                            return;
+                        } else if (args[1] === 'withdraw') {
+                            this.log('=== Omega Mixer Withdraw ===', 'info');
+                            this.log('Enter your secret (hex) and withdrawal address separated by a space:', 'info');
+                            this.awaitingMixerWithdraw = true;
+                        } else if (this.awaitingMixerWithdraw && args.length === 3) {
+                            // args[1] = secret, args[2] = to_address
+                            this.awaitingMixerWithdraw = false;
+                            this.log('=== Omega Mixer Withdraw ===', 'info');
+                            this.log('In MetaMask (or via relayer), call the withdraw function on the mixer contract:', 'info');
+                            this.logHtml('   Contract: <span class=\"copyable\" onclick=\"navigator.clipboard.writeText(\'0xc57824b37a7fc769871075103c4dd807bfb3fd3e\').then(() => window.terminal.log(\'✅ Address copied to clipboard!\', \'success\')).catch(() => window.terminal.log(\'❌ Failed to copy address\', \'error\'))\">0xc57824b37a7fc769871075103c4dd807bfb3fd3e</span>', 'info');
+                            this.log('   Function: withdraw(bytes32 secret, address to)', 'info');
+                            this.log(`   Secret: ${args[1]}`, 'info');
+                            this.log(`   To: ${args[2]}`, 'info');
+                            this.log('You can use a relayer to submit this transaction for extra privacy.', 'info');
+                        } else if (args[1] === 'withdraw-direct') {
+                            this.log('=== Omega Mixer Withdraw (Direct) ===', 'warning');
+                            this.log('WARNING: This will require your private key. Use at your own risk!', 'warning');
+                            this.log('Enter your private key (without 0x prefix):', 'info');
+                            this.awaitingPrivateKey = true;
+                            this.awaitingMixerWithdrawDirect = true;
                         } else {
-                            this.log('Usage: fund <amount>', 'error');
+                            this.log('Usage: mixer deposit | mixer deposit-execute | mixer deposit-direct | mixer withdraw | mixer withdraw-direct | mixer -help', 'info');
                         }
                         break;
-                    case 'fundmining':
-                        if (args.length >= 2) {
-                            await this.fundMiningWallet(args[1]);
-                        } else {
-                            this.log('Usage: fundmining [amount]', 'error');
-                        }
+                    case 'balance':
+                        await this.showBalance();
                         break;
-                    case 'clob':
-                        this.log('Olympus cDEX Launching Soon', 'info');
+                    case 'claim':
+                        await this.claim();
                         break;
-                    case 'v2':
-                        this.log('V2 will be a significant upgrade with bot trading, AI, and other surprises. Coming Soon', 'info');
+                    case 'stop':
+                        this.stopAll();
                         break;
                     default:
                         if (cmd) {
@@ -1308,6 +1504,7 @@
                             this.log('Type "help" for available commands', 'info');
                         }
                 }
+                // --- End command parsing ---
             }
             
             async mine() {
@@ -1527,6 +1724,7 @@
                 this.log('Mining wallet is generated in-browser. Fund it from MetaMask, mine, then use [claim] to send rewards directly to your wallet.', 'info');
                 this.log('CLOB: [clob]', 'output');
                 this.log('V2: [v2]', 'output');
+                this.log('Mixer: [mixer deposit] | [mixer deposit-execute] | [mixer deposit-direct] | [mixer withdraw] | [mixer withdraw-direct] | [mixer -help]', 'output');
             }
             
             async showBalance() {
@@ -1598,6 +1796,12 @@
                         this.stressTestInterval = null;
                     }
                     stoppedActivities.push('stress testing');
+                }
+                
+                // Also clear stress funding interval if running
+                if (this.stressFundingInterval) {
+                    clearInterval(this.stressFundingInterval);
+                    this.stressFundingInterval = null;
                 }
                 
                 if (stoppedActivities.length > 0) {

@@ -6,6 +6,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https:;">
     <title>Omega Terminal - Mining Interface</title>
     <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eth-crypto@2.1.2/dist/lib.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -559,21 +560,7 @@
             <b>Note:</b> Each wallet can only claim from the faucet once every 24 hours.<br>
             If you try to claim again before the cooldown is over, the transaction will fail.
         </div>
-        <div class="terminal-content" id="terminalContent">
-            <div class="terminal-line">
-                <span class="prompt">root@omega-miner:~$</span>
-                <span class="command"> ./omega-miner --version</span>
-            </div>
-            <div class="output">Omega Mining Terminal v1.0.0</div>
-            <div class="output">Connected to Omega Network (Chain ID: 1313161768)</div>
-            <div class="output">Mining Contract: <span id="contractAddress">Not deployed</span></div>
-            <div class="terminal-line">
-                <span class="prompt">root@omega-miner:~$</span>
-                <span class="command"> ./omega-miner --help</span>
-            </div>
-            <div class="output error">Type 'help' to see a list of commands</div>
-        </div>
-
+        <div class="terminal-content" id="terminalContent"></div>
         <div class="terminal-input-section">
             <div class="input-line">
                 <span class="input-prompt">root@omega-miner:~$</span>
@@ -724,7 +711,7 @@
                 
                 // Contract properties
                 this.contractAddress = "0x54c731627f2d2b55267b53e604c869ab8e6a323b"; // SimpleMiner contract with claimTo
-                this.faucetAddress = "0x0d4a5d6d28ce3d79dfd145b3ca5286a50c2f9895"; // Keep existing faucet
+                this.faucetAddress = "0xf8e00f8cfaccf9b95f703642ec589d1c6ceee1a9"; // Update faucet contract address
                 this.minerFaucetAddress = '0x1c4ffffcc804ba265f6cfccffb94d0ae28b36207'; // Deployed OmegaMinerFaucet contract
                 this.contractABI = [
                     "function mineBlock(uint256 nonce, bytes32 solution) external",
@@ -746,6 +733,22 @@
                         "name": "claim",
                         "outputs": [],
                         "stateMutability": "nonpayable",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            { "internalType": "address", "name": "user", "type": "address" }
+                        ],
+                        "name": "getFaucetStatus",
+                        "outputs": [
+                            { "internalType": "bool", "name": "canClaimNow", "type": "bool" },
+                            { "internalType": "uint256", "name": "lastClaim", "type": "uint256" },
+                            { "internalType": "uint256", "name": "timeUntilNextClaim", "type": "uint256" },
+                            { "internalType": "uint256", "name": "claimAmount", "type": "uint256" },
+                            { "internalType": "uint256", "name": "faucetBalance", "type": "uint256" },
+                            { "internalType": "uint256", "name": "totalClaims_", "type": "uint256" }
+                        ],
+                        "stateMutability": "view",
                         "type": "function"
                     },
                     {
@@ -1196,7 +1199,7 @@
                     }
                     this.logHtml('<span style="color:#99ccff">Message:</span> <span style="color:#fff">' + message + '</span>', 'info');
                     await this.sendDirectMessage(recipient, message);
-                    this.log('✅ OeMail sent!', 'success');
+                    this.log('✅ Email sent!', 'success');
                     return;
                 }
 
@@ -1210,6 +1213,12 @@
                 } catch (e) {}
                 const args = command.trim().split(/\s+/);
                 const cmd = args[0].toLowerCase();
+
+                if (cmd === 'email' && args[1] === 'clearkey') {
+                    this.e2eePrivateKey = null;
+                    this.log('E2EE private key cleared from memory.', 'success');
+                    return;
+                }
 
                 // --- Handle awaiting input states before command parsing ---
                 if (this.awaitingMixerDirectInput && args.length === 2) {
@@ -1357,6 +1366,9 @@
                     case 'disconnect':
                         this.disconnectWallet();
                         break;
+                    case 'balance':
+                        await this.showBalance();
+                        break;
                     case 'theme':
                         this.setTheme(args[1]);
                         break;
@@ -1364,7 +1376,11 @@
                         this.mine();
                         break;
                     case 'faucet':
-                        this.faucetClaim();
+                        if (args[1] === 'status') {
+                            await this.showFaucetStatus();
+                        } else {
+                            this.faucetClaim();
+                        }
                         break;
                     case 'status':
                         this.showStatus();
@@ -1522,9 +1538,6 @@
                             this.log('Usage: mixer deposit | mixer deposit-execute | mixer deposit-direct | mixer withdraw | mixer withdraw-direct | mixer -help', 'info');
                         }
                         break;
-                    case 'balance':
-                        await this.showBalance();
-                        break;
                     case 'claim':
                         await this.claim();
                         break;
@@ -1605,7 +1618,7 @@
                     case 'messages':
                         await this.showInbox();
                         break;
-                    case 'oemail':
+                    case 'email':
                         this.awaitingDMRecipient = true;
                         this.awaitingDMMessage = false;
                         this.tempDMRecipient = '';
@@ -1823,44 +1836,22 @@
             }
             
             async showUnifiedHelp() {
-                this.log('=== Omega Terminal Commands ===', 'info');
-                this.log('--- Wallet ---', 'output');
-                this.log('connect                - Connect your wallet', 'info');
-                this.log('disconnect             - Disconnect your wallet', 'info');
-                this.log('balance                - Show wallet balance', 'info');
+                this.logHtml('<span style="color:#33bbff">=== Omega Terminal Commands ===</span>', 'info');
+                this.log('--- Wallet ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: connect | disconnect | balance | faucet</span>', 'info');
                 this.log('--- Mining ---', 'output');
-                this.log('mine                   - Start mining', 'info');
-                this.log('claim                  - Claim mining rewards', 'info');
-                this.log('status                 - Show mining status', 'info');
-                this.log('stats                  - Show mining stats', 'info');
-                this.log('--- Sending & ENS ---', 'output');
-                this.log('send <to> <amount>     - Send OMEGA to address or ENS name', 'info');
-                this.log('ens register <name>    - Register an ENS name', 'info');
-                this.log('ens resolve <name>     - Resolve an ENS name to an address', 'info');
-                this.log('ens search <name>      - Search for an ENS name and show owner', 'info');
-                this.log('--- Mixer (Privacy) ---', 'output');
-                this.log('mixer deposit          - Generate secret/commitment for deposit', 'info');
-                this.log('mixer deposit-execute  - Generate and deposit via MetaMask', 'info');
-                this.log('mixer deposit-direct   - Generate and deposit with private key', 'info');
-                this.log('mixer withdraw         - Prepare withdrawal', 'info');
-                this.log('mixer withdraw-direct  - Withdraw with private key', 'info');
-                this.log('mixer -help            - Mixer usage help', 'info');
-                this.log('--- Stress Test ---', 'output');
-                this.log('stress                 - Start stress test', 'info');
-                this.log('stopstress             - Stop stress test', 'info');
-                this.log('stressstats            - Show stress test stats', 'info');
-                this.log('--- Fun & Misc ---', 'output');
-                this.log('theme <name>           - Switch theme (dark, light, matrix, retro)', 'info');
-                this.log('clear                  - Clear the terminal', 'info');
-                this.log('help                   - Show this help message', 'info');
-                this.log('rickroll, fortune, matrix, hack, disco, sudo mine', 'info');
-                this.log('clob, v2               - Other features', 'info');
-                this.log('stop                   - Stop mining and stress testing', 'info');
-                this.log('--- Messaging ---', 'output');
-                this.log('oemail                - Start a direct message (DM) flow', 'info');
-                this.log('inbox                 - View your received DMs', 'info');
+                this.logHtml('<span style="color:#33bbff">Commands: mine | claim | status | stats</span>', 'info');
+                this.log('--- ENS / Domains ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: send | ens register | ens resolve | ens search</span>', 'info');
+                this.log('--- Mixer (Privacy) ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: mixer deposit | mixer deposit-execute | mixer deposit-direct | mixer withdraw | mixer withdraw-direct | mixer -help</span>', 'info');
+                this.log('--- Stress Test ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: stress | stopstress | stressstats</span>', 'info');
+                this.log('--- Fun & Misc ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: theme | clear | help | rickroll | fortune | matrix | hack | disco | sudo mine | clob | v2 | stop</span>', 'info');
+                this.log('--- On Chain Email ----', 'output');
+                this.logHtml('<span style="color:#33bbff">Commands: email | inbox</span>', 'info');
                 this.log('---', 'output');
-                this.log('Mining wallet is generated in-browser. Fund it from MetaMask, mine, then use [claim] to send rewards directly to your wallet.', 'info');
             }
             
             // Replace old showHelp with unified version
@@ -1995,11 +1986,15 @@
             }
             
             async startStressTest() {
-                if (!this.ethers) {
-                    this.log('Ethers library not loaded. Please refresh the page.', 'error');
+                if (!this.ethers || !this.provider || !this.provider.getNetwork) {
+                    this.log('Ethers library or provider not loaded. Please refresh the page and connect your wallet.', 'error');
                     return;
                 }
-                
+                // Fallback ethers warning
+                if (typeof window.ethereum === 'undefined' || (await this.provider.getNetwork()).chainId === 0) {
+                    this.log('⚠️ Using fallback ethers or no real provider - stress test will not send real transactions.', 'warning');
+                    return;
+                }
                 if (this.isStressTesting) {
                     this.log('Stress test already running. Use "stopstress" to stop it.', 'warning');
                     return;
@@ -2478,9 +2473,9 @@
                         // It's an ENS name
                         tx = await dmContract.sendMessage('0x0000000000000000000000000000000000000000', recipient, message);
                     }
-                    this.log('⏳ Sending DM on-chain... (tx: ' + tx.hash + ')', 'info');
+                    this.log('⏳ Sending Email on-chain... (tx: ' + tx.hash + ')', 'info');
                     await tx.wait();
-                    this.log('✅ Direct message sent!', 'success');
+                    this.log('✅ Email sent!', 'success');
                 } catch (err) {
                     this.log('❌ Failed to send DM: ' + err.message, 'error');
                 }
@@ -2533,7 +2528,10 @@
                         const time = new Date(Number(ev.args.timestamp) * 1000).toISOString().replace('T', ' ').replace('Z', ' UTC');
                         const msgId = 'msg_' + i + '_' + ev.transactionHash;
                         this.log('──────────────────────────────', 'output');
-                        this.logHtml(`<span id="${msgId}"><span style="color:#fff">📧</span> <span style="color:#99ccff">From:</span> <span style="color:#fff">${ensName ? ensName + ' ' : ''}(${from})</span><br><span style="color:#99ccff">Time:</span> <span style="color:#fff">${time}</span><br><span style="color:#99ccff">Message:</span> <span style="color:#fff">${ev.args.message}</span><br><span style="color:#00ff99;cursor:pointer;text-decoration:underline;" onclick="document.getElementById('${msgId}').style.display='none'">Delete</span> | <span style="color:#00ccff;cursor:pointer;text-decoration:underline;" onclick="window.terminal.prefillOeMailRecipient('${from}')">Reply</span></span>`, 'output');
+                        this.logHtml(
+                            `<span id="${msgId}"><span style="color:#fff">📧</span> <span style="color:#99ccff">From:</span> <span style="color:#fff">${ensName ? ensName + ' ' : ''}(${from})</span><br><span style="color:#99ccff">Time:</span> <span style="color:#fff">${time}</span><br><span style="color:#99ccff">Message:</span> <span style="color:#fff">${ev.args.message}</span><br><span style="color:#00ff99;cursor:pointer;text-decoration:underline;" onclick="document.getElementById('${msgId}').style.display='none'">Delete</span> | <span style="color:#00ccff;cursor:pointer;text-decoration:underline;" onclick="window.terminal.prefillOeMailRecipient('${from}')">Reply</span></span>`,
+                            'output'
+                        );
                     }
                     this.log('Fetching inbox events...', 'info');
                     console.log('DM events:', events);
@@ -2552,6 +2550,36 @@
                     window.terminal.log('Enter your message:', 'info');
                     input.value = '';
                     input.focus();
+                }
+            }
+
+            async showFaucetStatus() {
+                if (!this.signer) {
+                    this.log('Please connect your wallet first using: connect', 'error');
+                    return;
+                }
+                try {
+                    const address = await this.signer.getAddress();
+                    const faucetContract = new this.ethers.Contract(this.faucetAddress, this.faucetABI, this.signer);
+                    // Get claim info
+                    const info = await faucetContract.getFaucetStatus(address);
+                    const canClaim = info.canClaimNow;
+                    const lastClaim = info.lastClaim;
+                    const timeUntil = info.timeUntilNextClaim;
+                    const claimAmount = info.claimAmount;
+                    // Get faucet balance
+                    const balance = await faucetContract.getFaucetBalance();
+                    this.log('=== Faucet Status ===', 'info');
+                    this.log(`Can claim now: ${canClaim ? '✅ Yes' : '❌ No'}`, canClaim ? 'success' : 'error');
+                    if (!canClaim) {
+                        const mins = Math.floor(timeUntil / 60);
+                        const secs = timeUntil % 60;
+                        this.log(`Time until next claim: ${mins}m ${secs}s`, 'warning');
+                    }
+                    this.log(`Faucet balance: ${this.ethers.utils.formatEther(balance)} OMEGA`, 'info');
+                    this.log(`Claim amount: ${this.ethers.utils.formatEther(claimAmount)} OMEGA`, 'info');
+                } catch (error) {
+                    this.log('❌ Failed to fetch faucet status: ' + error.message, 'error');
                 }
             }
         }
